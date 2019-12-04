@@ -5,6 +5,27 @@
 implementation of arithmetic on matricies and multi-dimensional data types, as well
 as basic linear algebra. In due course the aim is also to support FFT functions.
 
+## Motivation
+
+Why on Earth would anyone want to put a huge package like *numpy* onto a microcontroller?
+In general you would not. That's why this is not a port of *numpy* but instead a new
+implementation of a subset of the functionality. That subset is geared towards making it easy
+and efficient to implement the sorts of algorithms that people *do* want to put on a
+microcontroller. For instance, a microcontroller that has to make decisions based on noisy
+sensor data from a variety of sensors might need to implement a [Kalman filter](https://en.wikipedia.org/wiki/Kalman_filter)
+to get a best guess as to the its state. Implementing this sort of filter is vastly easier when
+matrix operations can be expres cleanly. Similarly performing
+[Fourier transforms](https://en.wikipedia.org/wiki/Fourier_transform) and
+[convolutions](https://en.wikipedia.org/wiki/Fourier_transform) can be important for extracting
+the relevant parts of signals coming from sensors in control systems.
+
+One of the goals of *uumpy* is to allow developers to tune the size of the implementation to
+their needs. Large but self-contained blocks of functionality should be optional, so that they
+don't need to be included if they are not needed. Where there are speed/size trade-offs to be
+made it should be possible for these to be adjusted at compile-time. If math on multi-dimensional
+arrays is all that is needed then *uumpy* can be pretty compact; when data-type specific math
+code makes use of fully unrolled loops it can be fast. You choose.
+
 ## Usage
 
 As far as possible *uumpy* should work just like *numpy*. As a result you should just be able
