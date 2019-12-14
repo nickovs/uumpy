@@ -33,44 +33,12 @@
 #include "py/objtuple.h"
 
 #include "moduumpy.h"
-
-struct _uumpy_universal_spec;
-
-// A function that iterates across the last dimension to perform a function
-typedef bool(*_uumpy_universal_binary)(size_t depth,
-                                       uumpy_obj_ndarray_t *dest, size_t dest_offset,
-                                       uumpy_obj_ndarray_t *src1, size_t src1_offset,
-                                       uumpy_obj_ndarray_t *src2, size_t src2_offset,
-                                        struct _uumpy_universal_spec *spec);
-typedef bool(*_uumpy_universal_unary)(size_t depth,
-                                      uumpy_obj_ndarray_t *dest, size_t dest_offset,
-                                      uumpy_obj_ndarray_t *src, size_t src_offset,
-                                      struct _uumpy_universal_spec *spec);
-
-typedef void(*_uumpy_multiply_accumulate)(uumpy_obj_ndarray_t *dest, size_t dest_offset,
-                                          uumpy_obj_ndarray_t *src1, size_t src1_offset, size_t src1_dim,
-                                          uumpy_obj_ndarray_t *src2, size_t src2_offset, size_t src2_dim);
+#include "ufunc.h"
 
 STATIC mp_obj_t ndarray_binary_op(mp_binary_op_t op, mp_obj_t lhs_in, mp_obj_t rhs_in);
 STATIC uumpy_obj_ndarray_t *ndarray_new_0d(mp_obj_t value, char typecode);
 STATIC uumpy_obj_ndarray_t *uumpy_array_from_value(const mp_obj_t value, char typecode);
 STATIC uumpy_obj_ndarray_t *ndarray_new(char typecode, size_t dim_count, size_t *dims);
-
-// Apply the function the last dimention, not the items
-#define UUMPY_UNIVERSAL_FLAGS_APPLY_1D 0x01
-
-typedef struct _uumpy_universal_spec {
-    mp_int_t flags;
-    union {
-        _uumpy_universal_binary binary;
-        _uumpy_universal_unary unary;
-    } apply_fn;
-    void *context;
-    union {
-        mp_unary_op_t u_op;
-        mp_binary_op_t b_op;
-    } extra;
-} uumpy_universal_spec;
 
 
 STATIC bool _get_list_tuple(mp_obj_t value, size_t *len, mp_obj_t **items) {
@@ -89,199 +57,12 @@ STATIC bool _get_list_tuple(mp_obj_t value, size_t *len, mp_obj_t **items) {
     }
 }
 
-STATIC bool ndarray_apply_universal_binary_inner(size_t depth,
-                                                 uumpy_obj_ndarray_t *dest, size_t dest_offset,
-                                                 uumpy_obj_ndarray_t *src1, size_t src1_offset,
-                                                 uumpy_obj_ndarray_t *src2, size_t src2_offset,
-                                                 struct _uumpy_universal_spec *spec) {
-    size_t dims_left = dest->dim_count - depth;
-    _uumpy_universal_binary apply;
-    size_t length = dest->dim_info[depth].length;
-
-    // DEBUG_printf("Applying at depth %d, offsets: dest: %d, src1: %d, src2: %d\n", depth, dest_offset, src1_offset, src2_offset);
-    
-    if (dims_left == 1 || ((spec->flags & UUMPY_UNIVERSAL_FLAGS_APPLY_1D) && dims_left == 2)) {
-        apply = spec->apply_fn.binary;
-    } else {
-        apply = &ndarray_apply_universal_binary_inner;
-    }
-
-    for(size_t i=0; i <  length; i++) {
-        if (!apply(depth + 1,
-                   dest, dest_offset,
-                   src1, src1_offset,
-                   src2, src2_offset,
-                   spec)) {
-            return false;
-        }
-        dest_offset += dest->dim_info[depth].stride;
-        src1_offset += src1->dim_info[depth].stride;
-        src2_offset += src2->dim_info[depth].stride;
-    }
-    
-    return true;
-}
-
-STATIC bool ndarray_apply_universal_binary(uumpy_obj_ndarray_t *dest,
-                                           uumpy_obj_ndarray_t *src1,
-                                           uumpy_obj_ndarray_t *src2,
-                                           struct _uumpy_universal_spec *spec) {
-    if ((dest->dim_count) == 1 && (spec->flags & UUMPY_UNIVERSAL_FLAGS_APPLY_1D)) {
-        return spec->apply_fn.binary(0,
-                                     dest, dest->base_offset,
-                                     src1, src1->base_offset,
-                                     src2, src2->base_offset,
-                                     spec);
-    } else {
-        return ndarray_apply_universal_binary_inner(0,
-                                                    dest, dest->base_offset,
-                                                    src1, src1->base_offset,
-                                                    src2, src2->base_offset,
-                                                    spec);
-    }
-}
-
-STATIC bool ndarray_apply_universal_unary_inner(size_t depth,
-                                                uumpy_obj_ndarray_t *dest, size_t dest_offset,
-                                                uumpy_obj_ndarray_t *src, size_t src_offset,                                                
-                                                struct _uumpy_universal_spec *spec) {
-    size_t dims_left = dest->dim_count - depth;
-    _uumpy_universal_unary apply;
-    size_t length = dest->dim_info[depth].length;
-    
-    // DEBUG_printf("Applying at depth %d, offsets: dest: %d, src: %d", depth, dest_offset, src_offset);
-
-    if (dims_left == 1 || ((spec->flags & UUMPY_UNIVERSAL_FLAGS_APPLY_1D) && dims_left == 2)) {
-        apply = spec->apply_fn.unary;
-    } else {
-        apply = &ndarray_apply_universal_unary_inner;
-    }
-    
-    for(size_t i=0; i <  length; i++) {
-        if (!apply(depth+1,
-                   dest, dest_offset,
-                   src, src_offset,
-                   spec)) {
-            return false;
-        }
-        dest_offset += dest->dim_info[depth].stride;
-        src_offset += src->dim_info[depth].stride;
-    }
-    return true;
-}
-
-STATIC bool ndarray_apply_universal_unary(uumpy_obj_ndarray_t *dest,
-                                          uumpy_obj_ndarray_t *src,
-                                          uumpy_universal_spec *spec) {
-    if ((dest->dim_count) == 1 && (spec->flags & UUMPY_UNIVERSAL_FLAGS_APPLY_1D)) {
-        return spec->apply_fn.unary(0,
-                                    dest, dest->base_offset,
-                                    src, src->base_offset,
-                                    spec);
-    } else {
-        return ndarray_apply_universal_unary_inner(0,
-                                                   dest, dest->base_offset,
-                                                   src, src->base_offset,
-                                                   spec);
-    }
-}
-
-// This is a fall-back copy function that lets micropython deal with casting.
-STATIC bool ndarray_universal_copy(size_t depth,
-                                   uumpy_obj_ndarray_t *dest, size_t dest_offset,
-                                   uumpy_obj_ndarray_t *src, size_t src_offset,
-                                   struct _uumpy_universal_spec *spec) {
-    (void) depth;
-    (void) spec;
-    mp_obj_t value = mp_binary_get_val_array(src->typecode, src->data, src_offset);
-    mp_binary_set_val_array(dest->typecode, dest->data, dest_offset, value);
-    return true;
-}
-
-// If there is no optimised code for any given operation, just let micropython do it
-STATIC bool ndarray_universal_binary_op_fallback(size_t depth,
-                                                 uumpy_obj_ndarray_t *dest, size_t dest_offset,
-                                                 uumpy_obj_ndarray_t *src1, size_t src1_offset,
-                                                 uumpy_obj_ndarray_t *src2, size_t src2_offset,
-                                                 struct _uumpy_universal_spec *spec) {
-    (void) depth;
-    mp_obj_t value1 = mp_binary_get_val_array(src1->typecode, src1->data, src1_offset);
-    mp_obj_t value2 = mp_binary_get_val_array(src2->typecode, src2->data, src2_offset);
-
-    // DEBUG_printf("Fallback binary op: %d lhs: %p rhs: %p\n", spec->extra.b_op, value1, value2);
-    
-    mp_obj_t result = mp_binary_op(spec->extra.b_op, value1, value2);
-    if (result == MP_OBJ_NULL) {
-        // DEBUG_printf(" FAILED\n");
-        return false;
-    } else {
-        mp_binary_set_val_array(dest->typecode, dest->data, dest_offset, result);
-        // DEBUG_printf(" result: %p\n", result);
-        return true;
-    }
-}
-
-STATIC bool ndarray_universal_unary_op_fallback(size_t depth,
-                                                uumpy_obj_ndarray_t *dest, size_t dest_offset,
-                                                uumpy_obj_ndarray_t *src, size_t src_offset,
-                                                struct _uumpy_universal_spec *spec) {
-    (void) depth;
-    mp_obj_t value = mp_binary_get_val_array(src->typecode, src->data, src_offset);
-
-    // DEBUG_printf("Fallback unary op: %d value: %p ", spec->extra.b_op, value);
-    
-    mp_obj_t result = mp_unary_op(spec->extra.u_op, value);
-    if (result == MP_OBJ_NULL) {
-        // DEBUG_printf(" FAILED\n");
-        return false;
-    } else {
-        mp_binary_set_val_array(dest->typecode, dest->data, dest_offset, result);
-        // DEBUG_printf(" result: %p\n", result);
-        return true;
-    }
-}
-
-STATIC void ndarray_mul_acc_fallback(uumpy_obj_ndarray_t *dest, size_t dest_offset,
-                                     uumpy_obj_ndarray_t *src1, size_t src1_offset, size_t src1_dim,
-                                     uumpy_obj_ndarray_t *src2, size_t src2_offset, size_t src2_dim) {
-    DEBUG_printf("MAC fallbabck: dest offset=%d, src1 offset=%d, dim=%d, src2 offset=%d, dim=%d\n",
-                 dest_offset, src1_offset, src1_dim, src2_offset, src2_dim);
-    size_t length = src1->dim_info[src1_dim].length;
-    if (length != src2->dim_info[src2_dim].length) {
-        DEBUG_printf("src1 depth: %d, src2 depth: %d : %d != %d", src1_dim, src2_dim, length, src2->dim_info[src2_dim].length);
-        mp_raise_ValueError("dimension mis-match");
-    }
-
-    mp_obj_t acc = (dest->typecode == 'f') ? mp_obj_new_float(0.0) : MP_OBJ_NEW_SMALL_INT(0);
-    mp_obj_t prod, v1, v2;
-
-    for (size_t i=0; i < src1->dim_info[src1_dim].length; i++) {
-        v1 = mp_binary_get_val_array(src1->typecode, src1->data, src1_offset);
-        v2 = mp_binary_get_val_array(src2->typecode, src2->data, src2_offset);
-
-        prod = mp_binary_op(MP_BINARY_OP_MULTIPLY, v1, v2);
-        if (prod == MP_OBJ_NULL) {
-            mp_raise_ValueError("could not multiply components");
-        }
-        
-        acc =  mp_binary_op(MP_BINARY_OP_ADD, prod, acc);
-        if (acc == MP_OBJ_NULL) {
-            mp_raise_ValueError("could not accumulate components");
-        }
-
-        src1_offset += src1->dim_info[src1_dim].stride;
-        src2_offset += src2->dim_info[src2_dim].stride;
-    }
-
-    mp_binary_set_val_array(dest->typecode, dest->data, dest_offset, acc);
-}
-
-STATIC void ndarray_dot_helper_1d(_uumpy_multiply_accumulate mac_fn, size_t lhs_depth, size_t rhs_depth,
+STATIC void ndarray_dot_helper_1d(uumpy_multiply_accumulate mac_fn, size_t lhs_depth, size_t rhs_depth,
                                   uumpy_obj_ndarray_t *dest, size_t dest_offset,
                                   uumpy_obj_ndarray_t *lhs, size_t lhs_offset,
                                   uumpy_obj_ndarray_t *rhs, size_t rhs_offset) {
-    DEBUG_printf("MAC 1d, lhs_depth=%d, rhs_depth=%d, dest_offset = %d, lhs_offset=%d, rhs_offset=%d\n",
-                 lhs_depth, rhs_depth, dest_offset, lhs_offset, rhs_offset);
+    // DEBUG_printf("MAC 1d, lhs_depth=%d, rhs_depth=%d, dest_offset = %d, lhs_offset=%d, rhs_offset=%d\n",
+    //              lhs_depth, rhs_depth, dest_offset, lhs_offset, rhs_offset);
 
     if (lhs_depth == lhs->dim_count-2) {
         for (size_t i=0; i < lhs->dim_info[lhs_depth].length; i++) {
@@ -305,15 +86,15 @@ STATIC void ndarray_dot_helper_1d(_uumpy_multiply_accumulate mac_fn, size_t lhs_
     }
 }
 
-STATIC void ndarray_dot_helper_Nd(_uumpy_multiply_accumulate mac_fn, size_t depth,
+STATIC void ndarray_dot_helper_Nd(uumpy_multiply_accumulate mac_fn, size_t depth,
                                   uumpy_obj_ndarray_t *dest, size_t dest_offset,
                                   uumpy_obj_ndarray_t *lhs, size_t lhs_offset,
                                   uumpy_obj_ndarray_t *rhs, size_t rhs_offset) {
     // In this function 'depth' refers to the depth of the rhs input
     size_t dest_depth = depth + lhs->dim_count - 1;
-    DEBUG_printf("MAC Nd, depth=%d, dest_depth=%d, dest_offset = %d, lhs_offset=%d, rhs_offset=%d\n",
-                 depth, dest_depth, dest_offset, lhs_offset, rhs_offset);
-    
+    // DEBUG_printf("MAC Nd, depth=%d, dest_depth=%d, dest_offset = %d, lhs_offset=%d, rhs_offset=%d\n",
+    //              depth, dest_depth, dest_offset, lhs_offset, rhs_offset);
+
     if (depth == rhs->dim_count - 2) {
         for (size_t i=0; i < rhs->dim_info[depth+1].length; i++) {
             ndarray_dot_helper_1d(mac_fn, 0, depth,
@@ -346,13 +127,13 @@ STATIC uumpy_obj_ndarray_t *ndarray_dot_impl(uumpy_obj_ndarray_t *lhs, uumpy_obj
     }
 
     uumpy_obj_ndarray_t *result = NULL;
-    
+
     // TODO: Select function based on type
-    _uumpy_multiply_accumulate mac_fn = ndarray_mul_acc_fallback;
+    uumpy_multiply_accumulate mac_fn = ufunc_mul_acc_fallback;
     // TODO: This will need to change when we add complex numbers
     char result_typecode = (lhs->typecode == 'f' || rhs->typecode == 'f') ? 'f' : 'i';
     size_t dims[UUMPY_MAX_DIMS];
-    
+
     if (lhs->dim_count == 1 && rhs->dim_count == 1) {
         // If both a and b are 1-D arrays, it is inner product of vectors (without complex conjugation).
         result = ndarray_new_0d(MP_OBJ_NEW_SMALL_INT(0), result_typecode);
@@ -362,18 +143,18 @@ STATIC uumpy_obj_ndarray_t *ndarray_dot_impl(uumpy_obj_ndarray_t *lhs, uumpy_obj
         if (lhs->dim_info[lhs->dim_count-1].length != rhs->dim_info[0].length) {
             mp_raise_ValueError("incompatible dimensions");
         }
-        
+
         for (size_t i=0; i < lhs->dim_count-1; i++) {
             dims[i] = lhs->dim_info[i].length;
         }
-        
+
         result = ndarray_new(result_typecode, lhs->dim_count-1, dims);
 
         ndarray_dot_helper_1d(mac_fn, 0, 0,
                              result, result->base_offset,
                              lhs, lhs->base_offset,
                              rhs, rhs->base_offset);
-    } else {    
+    } else {
         // If both a and b are 2-D arrays, it is matrix multiplication. This is a special case of:
         // If a is an N-D array and b is an M-D array (where M>=2), it is a sum product over the last axis of a and the second-to-last axis of b.
         // dot(a, b)[i,j,k,m] = sum(a[i,j,:] * b[k,:,m])
@@ -394,13 +175,13 @@ STATIC uumpy_obj_ndarray_t *ndarray_dot_impl(uumpy_obj_ndarray_t *lhs, uumpy_obj
         dims[lhs->dim_count + rhs->dim_count - 3] = rhs->dim_info[rhs->dim_count - 1].length;
 
         result = ndarray_new(result_typecode, lhs->dim_count + rhs->dim_count - 2, dims);
-        
+
         ndarray_dot_helper_Nd(mac_fn, 0,
                               result, result->base_offset,
                               lhs, lhs->base_offset,
                               rhs, rhs->base_offset);
     }
-    
+
     return result;
 }
 
@@ -414,16 +195,16 @@ STATIC mp_obj_t ndarray_dot(mp_obj_t lhs_in, mp_obj_t rhs_in) {
         rhs = MP_OBJ_TO_PTR(rhs_in);
         typecode = rhs->typecode;
     }
-    
+
     if (!mp_obj_is_type(lhs_in, MP_OBJ_FROM_PTR(&uumpy_type_ndarray))) {
         lhs = uumpy_array_from_value(lhs_in, typecode);
     } else {
-        lhs = MP_OBJ_TO_PTR(lhs_in);        
+        lhs = MP_OBJ_TO_PTR(lhs_in);
     }
     if (!mp_obj_is_type(rhs_in, MP_OBJ_FROM_PTR(&uumpy_type_ndarray))) {
         rhs = uumpy_array_from_value(rhs_in, lhs->typecode);
     } else {
-        rhs = MP_OBJ_TO_PTR(rhs_in);        
+        rhs = MP_OBJ_TO_PTR(rhs_in);
     }
 
     result = ndarray_dot_impl(lhs, rhs);
@@ -440,7 +221,7 @@ STATIC void ndarray_print_helper(const mp_print_t *print, size_t typecode,
     mp_int_t stride = dim_info[0].stride;
 
     // DEBUG_printf(" Length=%d, stride=%d\n", length, stride);
-    
+
     mp_print_str(print, "[");
     for(size_t i=0; i < length; i++, base_index += stride) {
         if (n_dims == 1) {
@@ -458,7 +239,7 @@ STATIC void ndarray_print_helper(const mp_print_t *print, size_t typecode,
     }
     mp_print_str(print, "]");
 }
-    
+
 STATIC void ndarray_print(const mp_print_t *print, mp_obj_t o_in, mp_print_kind_t kind) {
     uumpy_obj_ndarray_t *o = MP_OBJ_TO_PTR(o_in);
     mp_print_str(print, "ndarray(");
@@ -467,7 +248,7 @@ STATIC void ndarray_print(const mp_print_t *print, mp_obj_t o_in, mp_print_kind_
         mp_obj_print_helper(print,
                             mp_binary_get_val_array(o->typecode, o->data, o->base_offset),
                             PRINT_REPR);
-        
+
     } else {
         ndarray_print_helper(print, o->typecode,
                              o->data, o->base_offset,
@@ -490,7 +271,7 @@ STATIC uumpy_obj_ndarray_t *ndarray_new(char typecode, size_t dim_count, size_t 
     o->dim_info = m_new(uumpy_dim_info, dim_count);
 
     size_t total_count = 1;
-    
+
     for (mp_int_t i = dim_count-1; i >= 0; i--) {
         o->dim_info[i].length = dims[i];
         o->dim_info[i].stride = total_count;
@@ -503,7 +284,7 @@ STATIC uumpy_obj_ndarray_t *ndarray_new(char typecode, size_t dim_count, size_t 
 }
 
 STATIC uumpy_obj_ndarray_t *ndarray_new_view(uumpy_obj_ndarray_t *source, size_t new_base,
-                                             size_t new_dim_count, uumpy_dim_info *new_dims) {    
+                                             size_t new_dim_count, uumpy_dim_info *new_dims) {
     uumpy_obj_ndarray_t *o = m_new_obj(uumpy_obj_ndarray_t);
     o->base.type = &uumpy_type_ndarray;
     o->dim_count = new_dim_count;
@@ -522,19 +303,18 @@ STATIC uumpy_obj_ndarray_t *ndarray_new_view(uumpy_obj_ndarray_t *source, size_t
 STATIC uumpy_obj_ndarray_t *ndarray_new_from_ndarray(mp_obj_t value_in) {
     uumpy_obj_ndarray_t *value = MP_OBJ_TO_PTR(value_in);
     size_t dims[UUMPY_MAX_DIMS];
+    uumpy_universal_spec copy_spec;
+    char typecode;
 
     for (size_t i=0; i < value->dim_count; i++) {
         dims[i] = value->dim_info[i].length;
     }
-    
-    uumpy_obj_ndarray_t *o = ndarray_new(value->typecode, value->dim_count, dims);
-    
-    uumpy_universal_spec copy_spec = {
-        .flags = 0,
-        .apply_fn.unary = &ndarray_universal_copy,
-    };
 
-    ndarray_apply_universal_unary(o, value, &copy_spec);
+    ufunc_find_copy_spec(value, NULL, &typecode, &copy_spec);
+
+    uumpy_obj_ndarray_t *o = ndarray_new(typecode, value->dim_count, dims);
+
+    ufunc_apply_unary(o, value, &copy_spec);
 
     return o;
 }
@@ -556,13 +336,14 @@ STATIC uumpy_obj_ndarray_t *ndarray_new_1d_from_iterable(mp_obj_t value, size_t 
 STATIC uumpy_obj_ndarray_t *ndarray_new_0d(mp_obj_t value, char typecode) {
     uumpy_obj_ndarray_t *o = m_new_obj(uumpy_obj_ndarray_t);
     int typecode_size = mp_binary_get_size('@', typecode, NULL);
-    
+
     o->base.type = &uumpy_type_ndarray;
     o->dim_count = 0;
     o->typecode = typecode;
     o->simple = 0;
     o->free = 0;
     o->base_offset = 0;
+
     o->dim_info = NULL;
     o->data = m_new(byte, typecode_size);
 
@@ -571,12 +352,21 @@ STATIC uumpy_obj_ndarray_t *ndarray_new_0d(mp_obj_t value, char typecode) {
     return o;
 }
 
+STATIC mp_obj_t ndarray_get_obj_or_0d(uumpy_obj_ndarray_t *o) {
+    if (o->dim_count == 0) {
+        return mp_binary_get_val_array(o->typecode, o->data, o->base_offset);
+    } else {
+        return MP_OBJ_FROM_PTR(o);
+    }
+}
+
 STATIC void ndarray_copy_list_tuple(mp_obj_t value, uumpy_obj_ndarray_t *target, size_t depth, size_t offset) {
     bool last_dim = (depth == (target->dim_count));
 
     if (!value || value == mp_const_none) {
         mp_raise_ValueError("can't asign None to array");
     }
+
 
     size_t length;
     mp_obj_t *items;
@@ -595,7 +385,7 @@ STATIC void ndarray_copy_list_tuple(mp_obj_t value, uumpy_obj_ndarray_t *target,
             mp_raise_ValueError("incompatible shape");
         } else {
             mp_binary_set_val_array(target->typecode, target->data, offset, value);
-        }        
+        }
     }
 }
 
@@ -608,10 +398,10 @@ STATIC uumpy_obj_ndarray_t *ndarray_from_list_tuple(mp_obj_t value, char typecod
 
     size_t length;
     mp_obj_t *items;
-    
+
     while (o && _get_list_tuple(o, &length, &items)) {
         if (dim_count >= UUMPY_MAX_DIMS) {
-            mp_raise_ValueError("too many dimmensions");            
+            mp_raise_ValueError("too many dimmensions");
         }
         if (length) {
             dim_lengths[dim_count] = length;
@@ -678,14 +468,14 @@ STATIC uumpy_obj_ndarray_t *uumpy_array_from_value(const mp_obj_t value, char ty
     uumpy_obj_ndarray_t *new_array;
 
     if (mp_obj_is_type(value, MP_OBJ_FROM_PTR(&uumpy_type_ndarray))) {
-        new_array = ndarray_new_from_ndarray(value); 
+        new_array = ndarray_new_from_ndarray(value);
     } else if (mp_obj_is_type(value, MP_OBJ_FROM_PTR(&mp_type_list)) ||
                mp_obj_is_type(value, MP_OBJ_FROM_PTR(&mp_type_tuple)) ) {
         // DEBUG_printf("Making array from list\n");
         new_array = ndarray_from_list_tuple(value, typecode);
     } else {
         mp_obj_t value_len = mp_obj_len_maybe(value);
-        
+
         if ((value_len != MP_OBJ_NULL) && !mp_obj_is_str(value)) {
             // DEBUG_printf("Making new 1d array from iterable\n");
             new_array = ndarray_new_1d_from_iterable(value, mp_obj_get_int(value_len), typecode);
@@ -735,7 +525,7 @@ STATIC bool ndarray_broadcast(uumpy_obj_ndarray_t *left_in, uumpy_obj_ndarray_t 
 
     // DEBUG_printf("Broadcasting between %d-D array and %d-D array into %d-D array\n",
     //              left_in->dim_count, right_in->dim_count, output_dim_count);
-    
+
     // Dim counts are unsigned but we need a signed result
     mp_int_t l_index = ((mp_int_t) left_in->dim_count) - ((mp_int_t) output_dim_count);
     mp_int_t r_index = ((mp_int_t) right_in->dim_count) - ((mp_int_t) output_dim_count);
@@ -771,7 +561,7 @@ STATIC bool ndarray_broadcast(uumpy_obj_ndarray_t *left_in, uumpy_obj_ndarray_t 
         } else {
             mp_raise_ValueError("operands could not be broadcast together");
         }
-        
+
         l_index++;
         r_index++;
 
@@ -781,7 +571,7 @@ STATIC bool ndarray_broadcast(uumpy_obj_ndarray_t *left_in, uumpy_obj_ndarray_t 
     }
 
 
-    
+
     // Make the new views
     *left_out = ndarray_new_view(left_in, left_in->base_offset,
                                  output_dim_count, left_dim_info);
@@ -789,13 +579,14 @@ STATIC bool ndarray_broadcast(uumpy_obj_ndarray_t *left_in, uumpy_obj_ndarray_t 
                                  output_dim_count, right_dim_info);
 
     // DEBUG_printf("Broadcast complete. Left %stouched\n", left_touched ? "" : "not ");
-    
+
     return left_touched;
 }
 
 STATIC mp_obj_t ndarray_unary_op(mp_unary_op_t op, mp_obj_t o_in) {
     uumpy_obj_ndarray_t *o = MP_OBJ_TO_PTR(o_in);
-    char result_typecode;
+    char result_typecode = 0;
+    uumpy_universal_spec spec;
 
     switch (op) {
     case MP_UNARY_OP_LEN:
@@ -805,17 +596,17 @@ STATIC mp_obj_t ndarray_unary_op(mp_unary_op_t op, mp_obj_t o_in) {
             return MP_OBJ_NEW_SMALL_INT(o->dim_info[0].length);
         }
         break;
-        
-    case MP_UNARY_OP_POSITIVE:
-    case MP_UNARY_OP_NEGATIVE:
-    case MP_UNARY_OP_ABS:
-        result_typecode = o->typecode;
-        break;
 
     case MP_UNARY_OP_BOOL:
         mp_raise_ValueError("ambiguous; use any() or all()");
         break;
-        
+
+    case MP_UNARY_OP_POSITIVE:
+    case MP_UNARY_OP_NEGATIVE:
+    case MP_UNARY_OP_ABS:
+        ufunc_find_unary_op_spec(o, &result_typecode, op, &spec);
+        break;
+
     default:
         return MP_OBJ_NULL;
     }
@@ -824,56 +615,55 @@ STATIC mp_obj_t ndarray_unary_op(mp_unary_op_t op, mp_obj_t o_in) {
     for (size_t i=0; i < o->dim_count; i++) {
         dims[i] = o->dim_info[i].length;
     }
-    
+
     uumpy_obj_ndarray_t *result = ndarray_new(result_typecode, o->dim_count, dims);
 
-    uumpy_universal_spec spec = {
-        .flags = 0,
-        .apply_fn.unary = &ndarray_universal_unary_op_fallback,
-        .extra.u_op = op,
-    };
-
-    if (!ndarray_apply_universal_unary(result, o, &spec)) {
+    if (!ufunc_apply_unary(result, o, &spec)) {
         return MP_OBJ_NULL;
     } else {
-        return MP_OBJ_FROM_PTR(result);
+        return ndarray_get_obj_or_0d(result);
     }
 }
 
 STATIC mp_obj_t ndarray_binary_op(mp_binary_op_t op, mp_obj_t lhs_in, mp_obj_t rhs_in) {
     uumpy_obj_ndarray_t *lhs;
     uumpy_obj_ndarray_t *rhs;
-    
+
     char result_typecode;
     bool in_place = false;
     bool reverse = false;
 
+    // DEBUG_printf("Binary op: %d, lhs=%p, rhs=%p\n", op, lhs_in, rhs_in);
+
     lhs = MP_OBJ_TO_PTR(lhs_in);
     if (!mp_obj_is_type(rhs_in, MP_OBJ_FROM_PTR(&uumpy_type_ndarray))) {
+        // DEBUG_printf("Making new array from input %p\n", rhs_in);
         rhs = uumpy_array_from_value(rhs_in, lhs->typecode);
     } else {
-        rhs = MP_OBJ_TO_PTR(rhs_in);        
+        // DEBUG_printf("Using existing rhs object\n");
+        rhs = MP_OBJ_TO_PTR(rhs_in);
     }
-    
+
+    // DEBUG_printf("Using views: lhs=%p, rhs=%p\n", lhs, rhs);
+
     switch (op) {
     case MP_BINARY_OP_IS:
         return (lhs == rhs) ? mp_const_true : mp_const_false;
-        
+
     case MP_BINARY_OP_IN:
         return MP_OBJ_NULL;
 
     case MP_BINARY_OP_REVERSE_MAT_MULTIPLY:
-        return MP_OBJ_FROM_PTR(ndarray_dot_impl(rhs, lhs));
+        return ndarray_get_obj_or_0d(ndarray_dot_impl(rhs, lhs));
     case MP_BINARY_OP_MAT_MULTIPLY:
-        return MP_OBJ_FROM_PTR(ndarray_dot_impl(lhs, rhs));
-        
+        return ndarray_get_obj_or_0d(ndarray_dot_impl(lhs, rhs));
+
     case MP_BINARY_OP_LESS:
     case MP_BINARY_OP_MORE:
     case MP_BINARY_OP_EQUAL:
     case MP_BINARY_OP_LESS_EQUAL:
     case MP_BINARY_OP_MORE_EQUAL:
     case MP_BINARY_OP_NOT_EQUAL:
-        result_typecode = 'B';
         break;
 
     case MP_BINARY_OP_INPLACE_OR:
@@ -902,7 +692,6 @@ STATIC mp_obj_t ndarray_binary_op(mp_binary_op_t op, mp_obj_t lhs_in, mp_obj_t r
     case MP_BINARY_OP_TRUE_DIVIDE:
     case MP_BINARY_OP_MODULO:
     case MP_BINARY_OP_POWER:
-        result_typecode = lhs->typecode;
         break;
 
     case MP_BINARY_OP_REVERSE_OR:
@@ -917,26 +706,30 @@ STATIC mp_obj_t ndarray_binary_op(mp_binary_op_t op, mp_obj_t lhs_in, mp_obj_t r
     case MP_BINARY_OP_REVERSE_TRUE_DIVIDE:
     case MP_BINARY_OP_REVERSE_MODULO:
     case MP_BINARY_OP_REVERSE_POWER:
-        result_typecode = lhs->typecode;
         op = op - MP_BINARY_OP_REVERSE_OR + MP_BINARY_OP_OR;
         reverse = true;
         break;
-        
+
     default:
         return MP_OBJ_NULL;
     }
 
     if (in_place) {
         op = op - MP_BINARY_OP_INPLACE_OR + MP_BINARY_OP_OR;
+        result_typecode = lhs->typecode;
+    } else {
+        result_typecode = 0;
     }
-    
+
     uumpy_obj_ndarray_t *lhs_view;
     uumpy_obj_ndarray_t *rhs_view;
 
     if (ndarray_compare_dimensions(lhs, rhs)) {
         lhs_view = lhs;
-        lhs_view = rhs;
+        rhs_view = rhs;
     } else {
+        // DEBUG_printf("Dimensions not the same. Broadcasting\n");
+
         bool left_expand;
         left_expand = ndarray_broadcast(lhs, rhs, &lhs_view, &rhs_view);
         if (left_expand && in_place) {
@@ -945,12 +738,18 @@ STATIC mp_obj_t ndarray_binary_op(mp_binary_op_t op, mp_obj_t lhs_in, mp_obj_t r
     }
 
     if (reverse) {
-        DEBUG_printf("Reversing operands\n");
+        // DEBUG_printf("Reversing operands\n");
         uumpy_obj_ndarray_t *temp = lhs_view;
         lhs_view = rhs_view;
         rhs_view = temp;
-    }   
-    
+    }
+
+    // DEBUG_printf("Using views: lhs=%p, rhs=%p\n", lhs_view, rhs_view);
+
+    uumpy_universal_spec spec;
+    // Find the function spec, and result type if not in-place
+    ufunc_find_binary_op_spec(lhs_view, rhs_view, &result_typecode, op, &spec);
+
     uumpy_obj_ndarray_t *result;
 
     if (!in_place) {
@@ -964,20 +763,14 @@ STATIC mp_obj_t ndarray_binary_op(mp_binary_op_t op, mp_obj_t lhs_in, mp_obj_t r
         // DEBUG_printf("In place. Using left side as destination array\n");
         result = lhs;
     }
-    
-    uumpy_universal_spec spec = {
-        .flags = 0,
-        .apply_fn.binary = &ndarray_universal_binary_op_fallback,
-        .extra.b_op = op,
-    };
 
     // DEBUG_printf("Calling application function\n");
-    
-    if (!ndarray_apply_universal_binary(result, lhs_view, rhs_view, &spec)) {
+
+    if (!ufunc_apply_binary(result, lhs_view, rhs_view, &spec)) {
         return MP_OBJ_NULL;
     } else {
-        return MP_OBJ_FROM_PTR(result);
-    }    
+        return ndarray_get_obj_or_0d(result);
+    }
 }
 
 // We currently support subscripts that are int, slice, ellipsis or a tuple of these
@@ -990,7 +783,7 @@ STATIC mp_obj_t ndarray_subscr(mp_obj_t self_in, mp_obj_t index_in, mp_obj_t val
 
     size_t subscript_count;
     mp_obj_t *dim_subscripts;
-    
+
     if (!_get_list_tuple(index_in, &subscript_count, &dim_subscripts)) {
         subscript_count = 1;
         dim_subscripts = &index_in;
@@ -1012,7 +805,7 @@ STATIC mp_obj_t ndarray_subscr(mp_obj_t self_in, mp_obj_t index_in, mp_obj_t val
     // how far through the list of subscripts we are, which dimension in the
     // source will get unpacked next and which dimension in the destination
     // will get filled next.
-    
+
     size_t slice_dim_offset = 0;
     size_t target_dim_offset = 0;
     uumpy_dim_info target_dim_info[UUMPY_MAX_DIMS];
@@ -1023,7 +816,7 @@ STATIC mp_obj_t ndarray_subscr(mp_obj_t self_in, mp_obj_t index_in, mp_obj_t val
             mp_raise_msg(&mp_type_IndexError, "too many indices for source array");
         }
         if (target_dim_offset >= UUMPY_MAX_DIMS) {
-            mp_raise_msg(&mp_type_IndexError, "too many output dimensions");            
+            mp_raise_msg(&mp_type_IndexError, "too many output dimensions");
         }
 
         mp_obj_t item = dim_subscripts[subs_offset];
@@ -1042,11 +835,11 @@ STATIC mp_obj_t ndarray_subscr(mp_obj_t self_in, mp_obj_t index_in, mp_obj_t val
             mp_int_t copy_up_to = o->dim_count - (subscript_count - (subs_offset + 1));
 
             // DEBUG_printf("Copying source up to %d\n", copy_up_to);
-            
+
             while (slice_dim_offset < copy_up_to) {
                 // DEBUG_printf("  copying %d to %d\n", slice_dim_offset, target_dim_offset);
                 if (target_dim_offset >= UUMPY_MAX_DIMS) {
-                    mp_raise_msg(&mp_type_IndexError, "too many output dimensions");            
+                    mp_raise_msg(&mp_type_IndexError, "too many output dimensions");
                 }
                 target_dim_info[target_dim_offset] = o->dim_info[slice_dim_offset];
                 slice_dim_offset++;
@@ -1058,9 +851,15 @@ STATIC mp_obj_t ndarray_subscr(mp_obj_t self_in, mp_obj_t index_in, mp_obj_t val
             mp_bound_slice_t slice_info;
             mp_obj_slice_indices(item, o->dim_info[slice_dim_offset].length, &slice_info);
             // Divide length by step, rounding UP
-            mp_int_t slice_count = -((slice_info.start - slice_info.stop) / slice_info.step);
-            // DEBUG_printf("Slice: start %d, stop %d, step %d, count %d\n",
-            //              slice_info.start, slice_info.stop, slice_info.step, slice_count);
+            mp_int_t slice_count;
+
+            if (slice_info.step > 0) {
+                slice_count = (slice_info.stop + (slice_info.step - 1) - slice_info.start) / slice_info.step;
+            } else {
+                slice_count = (slice_info.start - (slice_info.step + 1) - slice_info.stop) / (-slice_info.step);
+            }
+            DEBUG_printf("Slice: start %d, stop %d, step %d, count %d\n",
+                         slice_info.start, slice_info.stop, slice_info.step, slice_count);
 
             target_base_offset += (o->dim_info[slice_dim_offset].stride * slice_info.start);
             target_dim_info[target_dim_offset].length = slice_count;
@@ -1090,13 +889,13 @@ STATIC mp_obj_t ndarray_subscr(mp_obj_t self_in, mp_obj_t index_in, mp_obj_t val
     // If we didn't use all the source dimensions then just copy them over
     while (slice_dim_offset < o->dim_count) {
         if (target_dim_offset >= UUMPY_MAX_DIMS) {
-            mp_raise_msg(&mp_type_IndexError, "too many output dimensions");            
+            mp_raise_msg(&mp_type_IndexError, "too many output dimensions");
         }
         target_dim_info[target_dim_offset] = o->dim_info[slice_dim_offset];
         slice_dim_offset++;
         target_dim_offset++;
     }
-    
+
     if (value == MP_OBJ_SENTINEL) {
         if (target_dim_offset == 0) {
             return mp_binary_get_val_array(o->typecode, o->data, target_base_offset);
@@ -1111,13 +910,13 @@ STATIC mp_obj_t ndarray_subscr(mp_obj_t self_in, mp_obj_t index_in, mp_obj_t val
         } else {
             uumpy_obj_ndarray_t *dest, *src;
             dest = ndarray_new_view(o, target_base_offset, target_dim_offset, target_dim_info);
-            
+
             if (!mp_obj_is_type(value, MP_OBJ_FROM_PTR(&uumpy_type_ndarray))) {
                 src = uumpy_array_from_value(value, o->typecode);
             } else {
                 src = MP_OBJ_TO_PTR(value);
             }
-            
+
             if (!ndarray_compare_dimensions(src, dest)) {
                 // Try boardcasting
                 if (ndarray_broadcast(dest, src, &dest, &src)) {
@@ -1125,15 +924,14 @@ STATIC mp_obj_t ndarray_subscr(mp_obj_t self_in, mp_obj_t index_in, mp_obj_t val
                 }
             }
             // Copy values
-            uumpy_universal_spec copy_spec = {
-                .flags = 0,
-                .apply_fn.unary = &ndarray_universal_copy,
-            };
+            uumpy_universal_spec copy_spec;
 
-            ndarray_apply_universal_unary(dest, src, &copy_spec);
-            
+            ufunc_find_copy_spec(src, dest, NULL, &copy_spec);
+
+            ufunc_apply_unary(dest, src, &copy_spec);
+
             return mp_const_none;
-        }        
+        }
     }
     return MP_OBJ_NULL;
 }
@@ -1174,7 +972,7 @@ STATIC mp_obj_t ndarray_transpose(size_t n_args, const mp_obj_t *args) {
             }
             // NOTE: This relies on UUMPY_MAX_DIMS being less than the word size
             mp_int_t dim_bits = (1 << dim_count) - 1;
-            
+
             for (size_t i=0; i < dim_count; i++) {
                 mp_int_t d = mp_obj_get_int(items[i]);
                 if (dim_bits & (1 << d)) {
@@ -1193,9 +991,9 @@ STATIC mp_obj_t ndarray_transpose(size_t n_args, const mp_obj_t *args) {
     for (size_t i=0; i < dim_count; i++) {
         new_dim_info[i] = o->dim_info[new_order_indices[i]];
     }
-    
+
     uumpy_obj_ndarray_t *result = ndarray_new_view(o, o->base_offset, o->dim_count, new_dim_info);
-    
+
     return MP_OBJ_FROM_PTR(result);
 }
 STATIC MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(ndarray_transpose_obj, 1, 2, ndarray_transpose);
@@ -1217,12 +1015,12 @@ STATIC mp_obj_t ndarray_reshape(mp_obj_t self_in, mp_obj_t new_shape_obj) {
     size_t dim_count;
     mp_obj_t *values;
 
-    if (_get_list_tuple(new_shape_obj, &dim_count, &values)) {    
+    if (_get_list_tuple(new_shape_obj, &dim_count, &values)) {
         size_t stride = 1;
         if (dim_count > UUMPY_MAX_DIMS) {
             mp_raise_ValueError("too many dimensions");
         }
-        
+
         for (mp_int_t i = dim_count-1; i >= 0; i--) {
             dim_info[i].length = mp_obj_get_int(values[i]);
             dim_info[i].stride = stride;
@@ -1232,12 +1030,12 @@ STATIC mp_obj_t ndarray_reshape(mp_obj_t self_in, mp_obj_t new_shape_obj) {
         if (stride != original_count) {
             mp_raise_ValueError("new shape has different size");
         }
-        
+
         new_array = ndarray_new_view(o, 0, dim_count, dim_info);
     } else {
         mp_raise_ValueError("new shape must be a list or tuple");
     }
-    
+
     return MP_OBJ_FROM_PTR(new_array);
 }
 STATIC MP_DEFINE_CONST_FUN_OBJ_2(ndarray_reshape_obj, ndarray_reshape);
@@ -1303,7 +1101,7 @@ STATIC const mp_rom_map_elem_t uumpy_module_globals_table[] = {
     { MP_ROM_QSTR(MP_QSTR_reshape), MP_ROM_PTR(&ndarray_reshape_obj) },
     { MP_ROM_QSTR(MP_QSTR_array), MP_ROM_PTR(&uumpy_array_obj) },
     { MP_ROM_QSTR(MP_QSTR_transpose), MP_ROM_PTR(&ndarray_transpose_obj) },
-    { MP_ROM_QSTR(MP_QSTR_dot), MP_ROM_PTR(&ndarray_dot_obj) },    
+    { MP_ROM_QSTR(MP_QSTR_dot), MP_ROM_PTR(&ndarray_dot_obj) },
 };
 STATIC MP_DEFINE_CONST_DICT(uumpy_module_globals, uumpy_module_globals_table);
 

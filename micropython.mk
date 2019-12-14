@@ -26,7 +26,7 @@
 UUMPY_MOD_DIR := $(USERMOD_DIR)
 
 # Add all C files to SRC_USERMOD.
-SRC_USERMOD += $(UUMPY_MOD_DIR)/moduumpy.c
+SRC_USERMOD += $(UUMPY_MOD_DIR)/moduumpy.c $(UUMPY_MOD_DIR)/ufunc.c
 
 # Add our module folder to include path
 CFLAGS_USERMOD += -I$(UUMPY_MOD_DIR)
