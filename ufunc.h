@@ -91,3 +91,7 @@ void ufunc_find_copy_spec(uumpy_obj_ndarray_t *src,
                           uumpy_obj_ndarray_t *dest,
                           char *dest_type_out,
                           uumpy_universal_spec *spec_out);
+
+void ufunc_find_unary_float_func_spec(uumpy_obj_ndarray_t *src,
+                                      char *dest_type_in_out, uumpy_unary_float_func f,
+                                      uumpy_universal_spec *spec_out);

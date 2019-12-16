@@ -34,11 +34,10 @@
 
 #include "moduumpy.h"
 #include "ufunc.h"
+#include "uumath.h"
 
 STATIC mp_obj_t ndarray_binary_op(mp_binary_op_t op, mp_obj_t lhs_in, mp_obj_t rhs_in);
 STATIC uumpy_obj_ndarray_t *ndarray_new_0d(mp_obj_t value, char typecode);
-STATIC uumpy_obj_ndarray_t *uumpy_array_from_value(const mp_obj_t value, char typecode);
-STATIC uumpy_obj_ndarray_t *ndarray_new(char typecode, size_t dim_count, size_t *dims);
 
 
 STATIC bool _get_list_tuple(mp_obj_t value, size_t *len, mp_obj_t **items) {
@@ -131,7 +130,7 @@ STATIC uumpy_obj_ndarray_t *ndarray_dot_impl(uumpy_obj_ndarray_t *lhs, uumpy_obj
     // TODO: Select function based on type
     uumpy_multiply_accumulate mac_fn = ufunc_mul_acc_fallback;
     // TODO: This will need to change when we add complex numbers
-    char result_typecode = (lhs->typecode == 'f' || rhs->typecode == 'f') ? 'f' : 'i';
+    char result_typecode = (lhs->typecode == UUMPY_DEFAULT_TYPE || rhs->typecode == UUMPY_DEFAULT_TYPE) ? UUMPY_DEFAULT_TYPE : 'i';
     size_t dims[UUMPY_MAX_DIMS];
 
     if (lhs->dim_count == 1 && rhs->dim_count == 1) {
@@ -189,7 +188,7 @@ STATIC mp_obj_t ndarray_dot(mp_obj_t lhs_in, mp_obj_t rhs_in) {
     uumpy_obj_ndarray_t *lhs;
     uumpy_obj_ndarray_t *rhs;
     uumpy_obj_ndarray_t *result;
-    char typecode = 'f';
+    char typecode = UUMPY_DEFAULT_TYPE;
 
     if (mp_obj_is_type(rhs_in, MP_OBJ_FROM_PTR(&uumpy_type_ndarray))) {
         rhs = MP_OBJ_TO_PTR(rhs_in);
@@ -257,7 +256,7 @@ STATIC void ndarray_print(const mp_print_t *print, mp_obj_t o_in, mp_print_kind_
     mp_printf(print, ", dtype='%c')", o->typecode);
 }
 
-STATIC uumpy_obj_ndarray_t *ndarray_new(char typecode, size_t dim_count, size_t *dims) {
+uumpy_obj_ndarray_t *ndarray_new(char typecode, size_t dim_count, size_t *dims) {
     int typecode_size = mp_binary_get_size('@', typecode, NULL);
 
     uumpy_obj_ndarray_t *o = m_new_obj(uumpy_obj_ndarray_t);
@@ -425,7 +424,7 @@ STATIC mp_obj_t ndarray_make_new(const mp_obj_type_t *type_in, size_t n_args, si
     mp_arg_check_num(n_args, n_kw, 1, 2, false);
 
     // Default type
-    char typecode = 'f';
+    char typecode = UUMPY_DEFAULT_TYPE;
 
     if (n_args == 2) {
         size_t type_len;
@@ -464,7 +463,7 @@ STATIC mp_obj_t ndarray_make_new(const mp_obj_type_t *type_in, size_t n_args, si
     return MP_OBJ_FROM_PTR(array);
 }
 
-STATIC uumpy_obj_ndarray_t *uumpy_array_from_value(const mp_obj_t value, char typecode) {
+uumpy_obj_ndarray_t *uumpy_array_from_value(const mp_obj_t value, char typecode) {
     uumpy_obj_ndarray_t *new_array;
 
     if (mp_obj_is_type(value, MP_OBJ_FROM_PTR(&uumpy_type_ndarray))) {
@@ -489,7 +488,7 @@ STATIC uumpy_obj_ndarray_t *uumpy_array_from_value(const mp_obj_t value, char ty
 }
 
 STATIC mp_obj_t uumpy_array(size_t n_args, const mp_obj_t *args) {
-    char typecode = 'f';
+    char typecode = UUMPY_DEFAULT_TYPE;
 
     if (n_args == 2) {
         typecode = *mp_obj_str_get_str(args[1]);
@@ -499,7 +498,7 @@ STATIC mp_obj_t uumpy_array(size_t n_args, const mp_obj_t *args) {
 }
 STATIC MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(uumpy_array_obj, 1, 2, uumpy_array);
 
-STATIC bool ndarray_compare_dimensions(uumpy_obj_ndarray_t *left_in, uumpy_obj_ndarray_t *right_in) {
+bool ndarray_compare_dimensions(uumpy_obj_ndarray_t *left_in, uumpy_obj_ndarray_t *right_in) {
     if (left_in->dim_count != right_in->dim_count) {
         return false;
     }
@@ -516,8 +515,8 @@ STATIC bool ndarray_compare_dimensions(uumpy_obj_ndarray_t *left_in, uumpy_obj_n
 // Returns true if the left array needed to be expanded
 // If the entries are different lengths we pad the _start_ to that the ends align.
 // If one dimension las length L>1 and the other has length 1 then reset to length L with stirde 1
-STATIC bool ndarray_broadcast(uumpy_obj_ndarray_t *left_in, uumpy_obj_ndarray_t *right_in,
-                              uumpy_obj_ndarray_t **left_out, uumpy_obj_ndarray_t **right_out) {
+bool ndarray_broadcast(uumpy_obj_ndarray_t *left_in, uumpy_obj_ndarray_t *right_in,
+                       uumpy_obj_ndarray_t **left_out, uumpy_obj_ndarray_t **right_out) {
     size_t output_dim_count = MAX(left_in->dim_count, right_in->dim_count);
     bool left_touched = (output_dim_count != left_in->dim_count);
     uumpy_dim_info left_dim_info[UUMPY_MAX_DIMS];
@@ -858,8 +857,8 @@ STATIC mp_obj_t ndarray_subscr(mp_obj_t self_in, mp_obj_t index_in, mp_obj_t val
             } else {
                 slice_count = (slice_info.start - (slice_info.step + 1) - slice_info.stop) / (-slice_info.step);
             }
-            DEBUG_printf("Slice: start %d, stop %d, step %d, count %d\n",
-                         slice_info.start, slice_info.stop, slice_info.step, slice_count);
+            // DEBUG_printf("Slice: start %d, stop %d, step %d, count %d\n",
+            //              slice_info.start, slice_info.stop, slice_info.step, slice_count);
 
             target_base_offset += (o->dim_info[slice_dim_offset].stride * slice_info.start);
             target_dim_info[target_dim_offset].length = slice_count;
@@ -1102,6 +1101,26 @@ STATIC const mp_rom_map_elem_t uumpy_module_globals_table[] = {
     { MP_ROM_QSTR(MP_QSTR_array), MP_ROM_PTR(&uumpy_array_obj) },
     { MP_ROM_QSTR(MP_QSTR_transpose), MP_ROM_PTR(&ndarray_transpose_obj) },
     { MP_ROM_QSTR(MP_QSTR_dot), MP_ROM_PTR(&ndarray_dot_obj) },
+
+    { MP_ROM_QSTR(MP_QSTR_sin), MP_ROM_PTR(&uumpy_math_sin_obj) },
+    { MP_ROM_QSTR(MP_QSTR_cos), MP_ROM_PTR(&uumpy_math_cos_obj) },
+    { MP_ROM_QSTR(MP_QSTR_tan), MP_ROM_PTR(&uumpy_math_tan_obj) },
+    { MP_ROM_QSTR(MP_QSTR_asin), MP_ROM_PTR(&uumpy_math_asin_obj) },
+    { MP_ROM_QSTR(MP_QSTR_acos), MP_ROM_PTR(&uumpy_math_acos_obj) },
+    { MP_ROM_QSTR(MP_QSTR_atan), MP_ROM_PTR(&uumpy_math_atan_obj) },
+
+#if UUMPY_ENABLE_HYPERBOLIC
+    { MP_ROM_QSTR(MP_QSTR_sinh), MP_ROM_PTR(&uumpy_math_sinh_obj) },
+    { MP_ROM_QSTR(MP_QSTR_cosh), MP_ROM_PTR(&uumpy_math_cosh_obj) },
+    { MP_ROM_QSTR(MP_QSTR_tanh), MP_ROM_PTR(&uumpy_math_tanh_obj) },
+    { MP_ROM_QSTR(MP_QSTR_asinh), MP_ROM_PTR(&uumpy_math_asinh_obj) },
+    { MP_ROM_QSTR(MP_QSTR_acosh), MP_ROM_PTR(&uumpy_math_acosh_obj) },
+    { MP_ROM_QSTR(MP_QSTR_atanh), MP_ROM_PTR(&uumpy_math_atanh_obj) },
+#endif
+
+    { MP_ROM_QSTR(MP_QSTR_log), MP_ROM_PTR(&uumpy_math_log_obj) },
+    { MP_ROM_QSTR(MP_QSTR_exp), MP_ROM_PTR(&uumpy_math_exp_obj) },
+    
 };
 STATIC MP_DEFINE_CONST_DICT(uumpy_module_globals, uumpy_module_globals_table);
 

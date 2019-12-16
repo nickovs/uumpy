@@ -32,6 +32,8 @@
 #include "py/obj.h"
 #include "py/objarray.h"
 
+#include "uumpy_config.h"
+
 // We limit ourselves to 8 dimensions in n-D arrays. Having a limit
 // allows us to have dim lists on the stack.
 #define UUMPY_MAX_DIMS 8
@@ -56,5 +58,11 @@ typedef struct _uumpy_obj_ndarray_t {
 
 // This is the type definition
 extern const mp_obj_type_t uumpy_type_ndarray;
+
+extern uumpy_obj_ndarray_t *uumpy_array_from_value(const mp_obj_t value, char typecode);
+extern uumpy_obj_ndarray_t *ndarray_new(char typecode, size_t dim_count, size_t *dims);
+extern bool ndarray_compare_dimensions(uumpy_obj_ndarray_t *left_in, uumpy_obj_ndarray_t *right_in);
+bool ndarray_broadcast(uumpy_obj_ndarray_t *left_in, uumpy_obj_ndarray_t *right_in,
+                       uumpy_obj_ndarray_t **left_out, uumpy_obj_ndarray_t **right_out);
 
 #endif // UUMPY_INCLUDED_MODUUMPY_H

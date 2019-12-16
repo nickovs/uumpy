@@ -145,7 +145,7 @@ STATIC bool ufunc_copy_same_type(size_t depth,
                                  uumpy_obj_ndarray_t *src, size_t src_offset,
                                  struct _uumpy_universal_spec *spec) {
     (void) depth;
-    DEBUG_printf("Copy same type at depth %d, from %d to %d, count=%d\n", depth, src_offset, dest_offset, spec->extra.c_count);
+    // DEBUG_printf("Copy same type at depth %d, from %d to %d, count=%d\n", depth, src_offset, dest_offset, spec->extra.c_count);
 
     size_t value_size = spec->value_size;
     memcpy(((char *) dest->data) + dest_offset * value_size, ((char *) src->data) + src_offset * value_size, spec->extra.c_count * value_size);
@@ -227,13 +227,13 @@ STATIC bool ufunc_unary_float_func_floats_1d(size_t depth,
     mp_int_t dest_stride = dest->dim_info[depth].stride;
 
     for (size_t i = dest->dim_info[depth].length; i > 0; i--) {
-        mp_float_t x = src_ptr[src_offset];
+        mp_float_t x = (src_ptr[src_offset]);
         mp_float_t ans = spec->extra.f_func(x);
 
         if ((isnan(ans) && !isnan(x)) || (isinf(ans) && !isinf(x))) {
             mp_raise_ValueError("math domain error");
         }
-        dest_ptr[dest_offset] = ans;
+                        dest_ptr[dest_offset] = ans;
 
         src_offset += src_stride;
         dest_offset += dest_stride;
@@ -241,8 +241,6 @@ STATIC bool ufunc_unary_float_func_floats_1d(size_t depth,
 
     return true;
 }
-
-
 
 void ufunc_mul_acc_fallback(uumpy_obj_ndarray_t *dest, size_t dest_offset,
                             uumpy_obj_ndarray_t *src1, size_t src1_offset, size_t src1_dim,
@@ -255,7 +253,7 @@ void ufunc_mul_acc_fallback(uumpy_obj_ndarray_t *dest, size_t dest_offset,
         mp_raise_ValueError("dimension mis-match");
     }
 
-    mp_obj_t acc = (dest->typecode == 'f') ? mp_obj_new_float(0.0) : MP_OBJ_NEW_SMALL_INT(0);
+    mp_obj_t acc = (dest->typecode == UUMPY_DEFAULT_TYPE) ? mp_obj_new_float(0.0) : MP_OBJ_NEW_SMALL_INT(0);
     mp_obj_t prod, v1, v2;
 
     for (size_t i=0; i < src1->dim_info[src1_dim].length; i++) {
@@ -363,12 +361,12 @@ void ufunc_find_unary_float_func_spec(uumpy_obj_ndarray_t *src,
                                       char *dest_type_in_out, uumpy_unary_float_func f,
                                       uumpy_universal_spec *spec_out) {
     if (*dest_type_in_out == 0) {
-        *dest_type_in_out = 'f';
+        *dest_type_in_out = UUMPY_DEFAULT_TYPE;
     }
 
     if ((src->dim_count > 0) &&
-        (src->typecode == 'f') &&
-        (*dest_type_in_out == 'f')) {
+        (src->typecode == UUMPY_DEFAULT_TYPE) &&
+        (*dest_type_in_out == UUMPY_DEFAULT_TYPE)) {
         uumpy_universal_spec spec = {
             .layers = 1,
             .apply_fn.unary = &ufunc_unary_float_func_floats_1d,
