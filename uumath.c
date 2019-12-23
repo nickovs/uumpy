@@ -64,7 +64,7 @@ STATIC mp_obj_t uumpy_math_helper_1(uumpy_unary_float_func op_func,
     
     // If the source is not an array then make one
     if (!mp_obj_is_type(args[ARG_x].u_obj, MP_OBJ_FROM_PTR(&uumpy_type_ndarray))) {
-        src = uumpy_array_from_value(args[ARG_x].u_obj, 'f');
+        src = uumpy_array_from_value(args[ARG_x].u_obj, UUMPY_DEFAULT_TYPE);
     } else {
         src = MP_OBJ_TO_PTR(args[ARG_x].u_obj);
     }

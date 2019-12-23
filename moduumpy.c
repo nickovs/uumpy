@@ -35,6 +35,7 @@
 #include "moduumpy.h"
 #include "ufunc.h"
 #include "uumath.h"
+#include "linalg.h"
 
 STATIC mp_obj_t ndarray_binary_op(mp_binary_op_t op, mp_obj_t lhs_in, mp_obj_t rhs_in);
 STATIC uumpy_obj_ndarray_t *ndarray_new_0d(mp_obj_t value, char typecode);
@@ -282,8 +283,8 @@ uumpy_obj_ndarray_t *ndarray_new(char typecode, size_t dim_count, size_t *dims) 
     return o;
 }
 
-STATIC uumpy_obj_ndarray_t *ndarray_new_view(uumpy_obj_ndarray_t *source, size_t new_base,
-                                             size_t new_dim_count, uumpy_dim_info *new_dims) {
+uumpy_obj_ndarray_t *ndarray_new_view(uumpy_obj_ndarray_t *source, size_t new_base,
+                                      size_t new_dim_count, uumpy_dim_info *new_dims) {
     uumpy_obj_ndarray_t *o = m_new_obj(uumpy_obj_ndarray_t);
     o->base.type = &uumpy_type_ndarray;
     o->dim_count = new_dim_count;
@@ -299,11 +300,10 @@ STATIC uumpy_obj_ndarray_t *ndarray_new_view(uumpy_obj_ndarray_t *source, size_t
     return o;
 }
 
-STATIC uumpy_obj_ndarray_t *ndarray_new_from_ndarray(mp_obj_t value_in) {
+uumpy_obj_ndarray_t *ndarray_new_from_ndarray(mp_obj_t value_in, char typecode) {
     uumpy_obj_ndarray_t *value = MP_OBJ_TO_PTR(value_in);
     size_t dims[UUMPY_MAX_DIMS];
     uumpy_universal_spec copy_spec;
-    char typecode;
 
     for (size_t i=0; i < value->dim_count; i++) {
         dims[i] = value->dim_info[i].length;
@@ -467,7 +467,7 @@ uumpy_obj_ndarray_t *uumpy_array_from_value(const mp_obj_t value, char typecode)
     uumpy_obj_ndarray_t *new_array;
 
     if (mp_obj_is_type(value, MP_OBJ_FROM_PTR(&uumpy_type_ndarray))) {
-        new_array = ndarray_new_from_ndarray(value);
+        new_array = ndarray_new_from_ndarray(value, typecode);
     } else if (mp_obj_is_type(value, MP_OBJ_FROM_PTR(&mp_type_list)) ||
                mp_obj_is_type(value, MP_OBJ_FROM_PTR(&mp_type_tuple)) ) {
         // DEBUG_printf("Making array from list\n");
@@ -1002,7 +1002,7 @@ STATIC mp_obj_t ndarray_reshape(mp_obj_t self_in, mp_obj_t new_shape_obj) {
     uumpy_obj_ndarray_t *new_array = NULL;
 
     if (!o->simple) {
-        o = ndarray_new_from_ndarray(self_in);
+        o = ndarray_new_from_ndarray(self_in, 0);
     }
 
     size_t original_count = 1;
@@ -1118,8 +1118,14 @@ STATIC const mp_rom_map_elem_t uumpy_module_globals_table[] = {
     { MP_ROM_QSTR(MP_QSTR_atanh), MP_ROM_PTR(&uumpy_math_atanh_obj) },
 #endif
 
+#if UUMPY_ENABLE_LINALG
+    { MP_ROM_QSTR(MP_QSTR_linalg), MP_ROM_PTR(&uumpy_linalg_module) },
+#endif
+    
     { MP_ROM_QSTR(MP_QSTR_log), MP_ROM_PTR(&uumpy_math_log_obj) },
     { MP_ROM_QSTR(MP_QSTR_exp), MP_ROM_PTR(&uumpy_math_exp_obj) },
+
+    { MP_ROM_QSTR(MP_QSTR_LinAlgError), MP_ROM_PTR(&uumpy_linalg_type_LinAlgError) },
     
 };
 STATIC MP_DEFINE_CONST_DICT(uumpy_module_globals, uumpy_module_globals_table);

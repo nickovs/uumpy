@@ -34,6 +34,17 @@
 
 #include "uumpy_config.h"
 
+#define UUMPY_DTYPE_GUESS (0)
+#define UUMPY_DTYPE_BOOL (1)
+#define UUMPY_DTYPE_BYTE (2)
+#define UUMPY_DTYPE_UBYTE (3)
+#define UUMPY_DTYPE_INT (4)
+#define UUMPY_DTYPE_UINT (5)
+#define UUMPY_DTYPE_LONG (6)
+#define UUMPY_DTYPE_ULONG (7)
+#define UUMPY_DTYPE_FLOAT (8)
+#define UUMPY_DTYPE_COMPLEX (10)
+
 // We limit ourselves to 8 dimensions in n-D arrays. Having a limit
 // allows us to have dim lists on the stack.
 #define UUMPY_MAX_DIMS 8
@@ -64,5 +75,9 @@ extern uumpy_obj_ndarray_t *ndarray_new(char typecode, size_t dim_count, size_t 
 extern bool ndarray_compare_dimensions(uumpy_obj_ndarray_t *left_in, uumpy_obj_ndarray_t *right_in);
 bool ndarray_broadcast(uumpy_obj_ndarray_t *left_in, uumpy_obj_ndarray_t *right_in,
                        uumpy_obj_ndarray_t **left_out, uumpy_obj_ndarray_t **right_out);
+
+uumpy_obj_ndarray_t *ndarray_new_from_ndarray(mp_obj_t value_in, char typecode);
+uumpy_obj_ndarray_t *ndarray_new_view(uumpy_obj_ndarray_t *source, size_t new_base,
+                                      size_t new_dim_count, uumpy_dim_info *new_dims);
 
 #endif // UUMPY_INCLUDED_MODUUMPY_H

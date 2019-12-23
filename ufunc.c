@@ -31,9 +31,7 @@
 #include <string.h>
 
 #include "py/runtime.h"
-#include "py/builtin.h"
 #include "py/binary.h"
-#include "py/objtuple.h"
 
 #include "moduumpy.h"
 #include "ufunc.h"

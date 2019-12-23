@@ -26,32 +26,14 @@
 
 // SPDX-License-Identifier: MIT
 
+#ifndef UUMPY_INCLUDED_LINALG_H
+#define UUMPY_INCLUDED_LINALG_H
 
+#if UUMPY_ENABLE_LINALG
 
-#include "py/mpconfig.h"
+extern const mp_obj_type_t uumpy_linalg_type_LinAlgError;
+extern const mp_obj_module_t uumpy_linalg_module;
 
-// Use the Micropython float type as the default uumpy array type
-#if MICROPY_FLOAT_IMPL == MICROPY_FLOAT_IMPL_NONE
-#error uumpy requires Micropython to be compiled with floating point support
-#elif MICROPY_FLOAT_IMPL == MICROPY_FLOAT_IMPL_FLOAT
-#define UUMPY_DEFAULT_TYPE 'f'
-#define UUMPY_EPSILON 1e-7
-#elif MICROPY_FLOAT_IMPL == MICROPY_FLOAT_IMPL_DOUBLE
-#define UUMPY_DEFAULT_TYPE 'd'
-#define UUMPY_EPSILON 1e-14
-#else
-#error Unknown floting point implementation type
-#endif
+#endif // UUMPY_ENABLE_LINALG
 
-// Feature support
-#define UUMPY_ENABLE_HYPERBOLIC (1)
-#define UUMPY_ENABLE_LINALG (1)
-#define UUMPY_ENABLE_FFT (1)
-#define UUMPY_ENABLE_COMPLEX (1)
-
-// Time/space trade-off performance settings
-// Include float-specfic implementations
-#define UUMPY_SPEEDUP_FLOAT (1)
-// Include regular integer-specfic implementations
-#define UUMPY_SPEEDUP_INT (1)
-
+#endif // UUMPY_INCLUDED_LINALG_H
