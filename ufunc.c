@@ -43,7 +43,7 @@ bool ufunc_apply_binary(uumpy_obj_ndarray_t *dest,
                         uumpy_obj_ndarray_t *src2,
                         struct _uumpy_universal_spec *spec) {
     size_t iterate_layers = dest->dim_count - spec->layers;
-
+    uumpy_dim_info * dim_info = dest->dim_info;
     size_t layer_indecies[UUMPY_MAX_DIMS];
     size_t dest_offset = dest->base_offset;
     size_t src1_offset = src1->base_offset;
@@ -51,9 +51,11 @@ bool ufunc_apply_binary(uumpy_obj_ndarray_t *dest,
     bool result = true;
     mp_int_t l;
 
+    spec->indicies = layer_indecies;
+    
     // The layer_indecies count down, since it's quicker
     for (size_t i=0; i < iterate_layers; i++) {
-        layer_indecies[i] = dest->dim_info[i].length;
+        layer_indecies[i] = 0;
     }
 
     do {
@@ -65,18 +67,18 @@ bool ufunc_apply_binary(uumpy_obj_ndarray_t *dest,
         for (l = iterate_layers-1; l >=0; l--) {
             src1_offset += src1->dim_info[l].stride;
             src2_offset += src2->dim_info[l].stride;
-            dest_offset += dest->dim_info[l].stride;
-            layer_indecies[l]--;
+            dest_offset += dim_info[l].stride;
+            layer_indecies[l]++;
 
-            if (layer_indecies[l] > 0) {
+            if (layer_indecies[l] < dim_info[l].length) {
                 break;
             } else {
                 // Reset this row and allow moving on to the next one
-                size_t ll = dest->dim_info[l].length;
-                layer_indecies[l] = ll;
+                size_t ll = dim_info[l].length;
+                layer_indecies[l] = 0;
                 src1_offset -= ll * src1->dim_info[l].stride;
                 src2_offset -= ll * src2->dim_info[l].stride;
-                dest_offset -= ll * dest->dim_info[l].stride;
+                dest_offset -= ll * dim_info[l].stride;
             }
         }
     } while (l >= 0);
@@ -88,16 +90,18 @@ bool ufunc_apply_unary(uumpy_obj_ndarray_t *dest,
                        uumpy_obj_ndarray_t *src,
                        uumpy_universal_spec *spec) {
     size_t iterate_layers = dest->dim_count - spec->layers;
-
+    uumpy_dim_info * dim_info = dest->dim_info;
     size_t layer_indecies[UUMPY_MAX_DIMS];
     size_t dest_offset = dest->base_offset;
     size_t src_offset = src->base_offset;
     bool result = true;
     mp_int_t l;
 
+    spec->indicies = layer_indecies;
+    
     // The layer_indecies count down, since it's quicker
     for (size_t i=0; i < iterate_layers; i++) {
-        layer_indecies[i] = dest->dim_info[i].length;
+        layer_indecies[i] = 0;
     }
 
     do {
@@ -108,14 +112,14 @@ bool ufunc_apply_unary(uumpy_obj_ndarray_t *dest,
         for (l = iterate_layers-1; l >=0; l--) {
             src_offset += src->dim_info[l].stride;
             dest_offset += dest->dim_info[l].stride;
-            layer_indecies[l]--;
+            layer_indecies[l]++;
 
-            if (layer_indecies[l] > 0) {
+            if (layer_indecies[l] < dim_info[l].length) {
                 break;
             } else {
                 // Reset this row and allow moving on to the next one
                 size_t ll = dest->dim_info[l].length;
-                layer_indecies[l] = ll;
+                layer_indecies[l] = 0;
                 src_offset -= ll * src->dim_info[l].stride;
                 dest_offset -= ll * dest->dim_info[l].stride;
             }

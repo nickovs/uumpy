@@ -79,5 +79,6 @@ bool ndarray_broadcast(uumpy_obj_ndarray_t *left_in, uumpy_obj_ndarray_t *right_
 uumpy_obj_ndarray_t *ndarray_new_from_ndarray(mp_obj_t value_in, char typecode);
 uumpy_obj_ndarray_t *ndarray_new_view(uumpy_obj_ndarray_t *source, size_t new_base,
                                       size_t new_dim_count, uumpy_dim_info *new_dims);
+uumpy_obj_ndarray_t *ndarray_new_shaped_like(char typecode, uumpy_obj_ndarray_t *other, size_t trim_dims);
 
 #endif // UUMPY_INCLUDED_MODUUMPY_H

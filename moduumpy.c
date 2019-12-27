@@ -27,6 +27,9 @@
 // SPDX-License-Identifier: MIT
 
 // Include required definitions first.
+
+#include <math.h>
+
 #include "py/runtime.h"
 #include "py/builtin.h"
 #include "py/binary.h"
@@ -148,8 +151,7 @@ STATIC uumpy_obj_ndarray_t *ndarray_dot_impl(uumpy_obj_ndarray_t *lhs, uumpy_obj
             dims[i] = lhs->dim_info[i].length;
         }
 
-        result = ndarray_new(result_typecode, lhs->dim_count-1, dims);
-
+        result = ndarray_new_shaped_like(result_typecode, lhs, 1);
         ndarray_dot_helper_1d(mac_fn, 0, 0,
                              result, result->base_offset,
                              lhs, lhs->base_offset,
@@ -283,6 +285,18 @@ uumpy_obj_ndarray_t *ndarray_new(char typecode, size_t dim_count, size_t *dims) 
     return o;
 }
 
+uumpy_obj_ndarray_t *ndarray_new_shaped_like(char typecode, uumpy_obj_ndarray_t *other,
+                                             size_t trim_dims) {
+    size_t dim_count = other->dim_count;
+    size_t dims[UUMPY_MAX_DIMS];
+
+    for(size_t i = 0; i < dim_count - trim_dims; i++) {
+        dims[i] = other->dim_info[i].length;
+    }
+
+    return ndarray_new(typecode, dim_count, dims);
+}
+
 uumpy_obj_ndarray_t *ndarray_new_view(uumpy_obj_ndarray_t *source, size_t new_base,
                                       size_t new_dim_count, uumpy_dim_info *new_dims) {
     uumpy_obj_ndarray_t *o = m_new_obj(uumpy_obj_ndarray_t);
@@ -302,16 +316,11 @@ uumpy_obj_ndarray_t *ndarray_new_view(uumpy_obj_ndarray_t *source, size_t new_ba
 
 uumpy_obj_ndarray_t *ndarray_new_from_ndarray(mp_obj_t value_in, char typecode) {
     uumpy_obj_ndarray_t *value = MP_OBJ_TO_PTR(value_in);
-    size_t dims[UUMPY_MAX_DIMS];
     uumpy_universal_spec copy_spec;
-
-    for (size_t i=0; i < value->dim_count; i++) {
-        dims[i] = value->dim_info[i].length;
-    }
 
     ufunc_find_copy_spec(value, NULL, &typecode, &copy_spec);
 
-    uumpy_obj_ndarray_t *o = ndarray_new(typecode, value->dim_count, dims);
+    uumpy_obj_ndarray_t *o = ndarray_new_shaped_like(typecode, value, 0);
 
     ufunc_apply_unary(o, value, &copy_spec);
 
@@ -438,10 +447,6 @@ STATIC mp_obj_t ndarray_make_new(const mp_obj_type_t *type_in, size_t n_args, si
     // This also raises an exception if it's a bad typecode
     (void) mp_binary_get_size('@', typecode, NULL);
 
-    // Check if the shape is a list or tuple
-    // Find the shape length
-    // Extract dimension (not nagative) into temp on stack
-    // Call ndarray_new()
     size_t dim_lengths[UUMPY_MAX_DIMS];
     size_t n_dims = 0;
     mp_obj_t iterable = mp_getiter(args[0], NULL);
@@ -610,12 +615,7 @@ STATIC mp_obj_t ndarray_unary_op(mp_unary_op_t op, mp_obj_t o_in) {
         return MP_OBJ_NULL;
     }
 
-    size_t dims[UUMPY_MAX_DIMS];
-    for (size_t i=0; i < o->dim_count; i++) {
-        dims[i] = o->dim_info[i].length;
-    }
-
-    uumpy_obj_ndarray_t *result = ndarray_new(result_typecode, o->dim_count, dims);
+    uumpy_obj_ndarray_t *result = ndarray_new_shaped_like(result_typecode, o, 0);
 
     if (!ufunc_apply_unary(result, o, &spec)) {
         return MP_OBJ_NULL;
@@ -752,12 +752,8 @@ STATIC mp_obj_t ndarray_binary_op(mp_binary_op_t op, mp_obj_t lhs_in, mp_obj_t r
     uumpy_obj_ndarray_t *result;
 
     if (!in_place) {
-        size_t dims[UUMPY_MAX_DIMS];
-        for (size_t i=0; i < lhs_view->dim_count; i++) {
-            dims[i] = lhs_view->dim_info[i].length;
-        }
         // DEBUG_printf("Creating destination array\n");
-        result = ndarray_new(result_typecode, lhs_view->dim_count, dims);
+        result = ndarray_new_shaped_like(result_typecode, lhs_view, 0);
     } else {
         // DEBUG_printf("In place. Using left side as destination array\n");
         result = lhs;
@@ -1039,6 +1035,136 @@ STATIC mp_obj_t ndarray_reshape(mp_obj_t self_in, mp_obj_t new_shape_obj) {
 }
 STATIC MP_DEFINE_CONST_FUN_OBJ_2(ndarray_reshape_obj, ndarray_reshape);
 
+typedef struct _uumpy_isclose_spec {
+    mp_float_t rtol;
+    mp_float_t atol;
+    bool equal_nan;
+} uumpy_isclose_spec;
+
+STATIC bool _uumpy_isclose_test(mp_float_t a, mp_float_t b, uumpy_isclose_spec *spec) {
+    if (isnan(a) && !isnan(b)) {
+        return spec->equal_nan;
+    }
+
+    if (isnan(a) || isnan(b)) {
+        return false;
+    }
+
+    if (a == b) {
+        return true;
+    }
+
+    mp_float_t diff = MICROPY_FLOAT_C_FUN(fabs)(a - b);
+    b = MICROPY_FLOAT_C_FUN(fabs)(b);
+
+    return (diff <= (spec->atol + spec->rtol  * b));
+}
+
+STATIC bool _uumpy_isclose_func_float(size_t depth,
+                                       uumpy_obj_ndarray_t *dest, size_t dest_offset,
+                                       uumpy_obj_ndarray_t *src1, size_t src1_offset,
+                                       uumpy_obj_ndarray_t *src2, size_t src2_offset,
+                                       struct _uumpy_universal_spec *spec) {
+    (void) depth;
+
+    mp_float_t *src1_data = src1->data;
+    mp_float_t *src2_data = src2->data;
+    unsigned char *dest_data = dest->data;
+
+    dest_data[dest_offset] = _uumpy_isclose_test(src1_data[src1_offset],
+                                                 src2_data[src2_offset],
+                                                 spec->context);
+    return true;
+}
+
+STATIC bool _uumpy_isclose_func_fallback(size_t depth,
+                                          uumpy_obj_ndarray_t *dest, size_t dest_offset,
+                                          uumpy_obj_ndarray_t *src1, size_t src1_offset,
+                                          uumpy_obj_ndarray_t *src2, size_t src2_offset,
+                                          struct _uumpy_universal_spec *spec) {
+    (void) depth;
+    unsigned char *dest_data = dest->data;
+
+    mp_obj_t a_obj = mp_binary_get_val_array(src1->typecode, src1->data, src1_offset);
+    mp_obj_t b_obj = mp_binary_get_val_array(src2->typecode, src2->data, src2_offset);
+
+    mp_float_t a = mp_obj_get_float(a_obj);
+    mp_float_t b = mp_obj_get_float(b_obj);
+
+    dest_data[dest_offset] = _uumpy_isclose_test(a, b, spec->context);
+
+    return true;
+}
+
+
+STATIC mp_obj_t uumpy_isclose(mp_uint_t n_args, const mp_obj_t *pos_args,
+                              mp_map_t *kw_args) {
+    enum {
+        ARG_a,
+        ARG_b,
+        ARG_rtol,
+        ARG_atol,
+        ARG_equal_nan,
+    };
+
+    static const mp_arg_t allowed_args[] = {
+        { MP_QSTR_a,         MP_ARG_REQUIRED | MP_ARG_OBJ },
+        { MP_QSTR_b,         MP_ARG_REQUIRED | MP_ARG_OBJ },
+        { MP_QSTR_rtol,      MP_ARG_KW_ONLY  | MP_ARG_OBJ,  {.u_obj = mp_const_none} },
+        { MP_QSTR_atol,      MP_ARG_KW_ONLY  | MP_ARG_OBJ,  {.u_obj = mp_const_none} },
+        { MP_QSTR_equal_nan, MP_ARG_KW_ONLY  | MP_ARG_BOOL, {.u_bool = false} },
+    };
+
+    mp_arg_val_t args[MP_ARRAY_SIZE(allowed_args)];
+    mp_arg_parse_all(n_args, pos_args, kw_args, MP_ARRAY_SIZE(allowed_args), allowed_args, args);
+
+    uumpy_obj_ndarray_t *a, *b;
+    uumpy_isclose_spec close_spec = {
+        .rtol=1e-05,
+        .atol=1e-08,
+    };
+    close_spec.equal_nan = args[ARG_equal_nan].u_bool;
+
+    if (!mp_obj_is_type(args[ARG_a].u_obj, MP_OBJ_FROM_PTR(&uumpy_type_ndarray))) {
+        a = uumpy_array_from_value(args[ARG_a].u_obj, UUMPY_DEFAULT_TYPE);
+    } else {
+        a = MP_OBJ_TO_PTR(args[ARG_a].u_obj);
+    }
+
+    if (!mp_obj_is_type(args[ARG_b].u_obj, MP_OBJ_FROM_PTR(&uumpy_type_ndarray))) {
+        b = uumpy_array_from_value(args[ARG_b].u_obj, UUMPY_DEFAULT_TYPE);
+    } else {
+        b = MP_OBJ_TO_PTR(args[ARG_b].u_obj);
+    }
+
+    if (args[ARG_rtol].u_obj != mp_const_none) {
+        close_spec.rtol = mp_obj_get_float(args[ARG_rtol].u_obj);
+    }
+    if (args[ARG_atol].u_obj != mp_const_none) {
+        close_spec.atol = mp_obj_get_float(args[ARG_atol].u_obj);
+    }
+
+    if (!ndarray_compare_dimensions(a, b)) {
+        ndarray_broadcast(a, b, &a, &b);
+    }
+
+    uumpy_obj_ndarray_t *result = ndarray_new_shaped_like('B', a, 0);
+    uumpy_universal_spec spec = {
+        .layers = 0,
+    };
+    spec.context = &close_spec;
+
+    if (a->typecode == UUMPY_DEFAULT_TYPE && b->typecode == UUMPY_DEFAULT_TYPE) {
+        spec.apply_fn.binary = _uumpy_isclose_func_float;
+    } else {
+        spec.apply_fn.binary = _uumpy_isclose_func_fallback;
+    }
+
+    ufunc_apply_binary(result, a, b, &spec);
+
+    return MP_OBJ_FROM_PTR(result);
+}
+MP_DEFINE_CONST_FUN_OBJ_KW(uumpy_isclose_obj, 1, uumpy_isclose);
 
 STATIC const mp_rom_map_elem_t ndarray_locals_dict_table[] = {
     //    { MP_ROM_QSTR(MP_QSTR_T), MP_ROM_PTR(&ndarray_T_property_obj) },
@@ -1121,12 +1247,14 @@ STATIC const mp_rom_map_elem_t uumpy_module_globals_table[] = {
 #if UUMPY_ENABLE_LINALG
     { MP_ROM_QSTR(MP_QSTR_linalg), MP_ROM_PTR(&uumpy_linalg_module) },
 #endif
-    
+
     { MP_ROM_QSTR(MP_QSTR_log), MP_ROM_PTR(&uumpy_math_log_obj) },
     { MP_ROM_QSTR(MP_QSTR_exp), MP_ROM_PTR(&uumpy_math_exp_obj) },
 
+    { MP_ROM_QSTR(MP_QSTR_isclose), MP_ROM_PTR(&uumpy_isclose_obj) },
+
     { MP_ROM_QSTR(MP_QSTR_LinAlgError), MP_ROM_PTR(&uumpy_linalg_type_LinAlgError) },
-    
+
 };
 STATIC MP_DEFINE_CONST_DICT(uumpy_module_globals, uumpy_module_globals_table);
 

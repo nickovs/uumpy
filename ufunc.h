@@ -59,9 +59,10 @@ typedef struct _uumpy_universal_spec {
         mp_unary_op_t u_op;
         mp_binary_op_t b_op;
         uumpy_unary_float_func f_func;
-        uumpy_unary_float_func f2_func;
+        uumpy_unary_float2_func f2_func;
         size_t c_count;
     } extra;
+    size_t *indicies;
 } uumpy_universal_spec;
 
 // Functions for applying functions across an array

@@ -95,13 +95,7 @@ STATIC mp_obj_t uumpy_math_helper_1(uumpy_unary_float_func op_func,
     ufunc_find_unary_float_func_spec(src, &result_typecode, op_func, &spec);
     
     if (args[ARG_out].u_obj == mp_const_none) {
-        // make a new array of the right size, with possible data type
-        size_t dims[UUMPY_MAX_DIMS];
-        for (size_t i=0; i < src->dim_count; i++) {
-            dims[i] = src->dim_info[i].length;
-        }
-        // DEBUG_printf("Creating destination array\n");
-        dest = ndarray_new(result_typecode, src->dim_count, dims);
+        dest = ndarray_new_shaped_like(result_typecode, src, 0);
     } else {
         dest = MP_OBJ_TO_PTR(&args[ARG_out]);
         // Broadcast input if necessary. It's slower than expanding the result but uses less memory.
