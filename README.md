@@ -14,7 +14,7 @@ and efficient to implement the sorts of algorithms that people *do* want to put 
 microcontroller. For instance, a microcontroller that has to make decisions based on noisy
 sensor data from a variety of sensors might need to implement a [Kalman filter](https://en.wikipedia.org/wiki/Kalman_filter)
 to get a best guess as to the its state. Implementing this sort of filter is vastly easier when
-matrix operations can be expres cleanly. Similarly performing
+matrix operations can be expressed cleanly. Similarly performing
 [Fourier transforms](https://en.wikipedia.org/wiki/Fourier_transform) and
 [convolutions](https://en.wikipedia.org/wiki/Fourier_transform) can be important for extracting
 the relevant parts of signals coming from sensors in control systems.
@@ -36,6 +36,16 @@ to use `import uumpy as np` and use the `np` module as you would with `numpy`.
 
 This code forms an 'external module' for Micropython. Documentation about how to
 make use of external modules can be found in the [Micropython documentation](https://docs.micropython.org/en/latest/develop/cmodules.html).
+
+
+## Release status
+
+This code is currently still in a pretty early state. It supports core
+matrix and multi-dimensional array math operations a some basic linear
+algebra but is currently missing most of the more esoteric functions
+(although the foundations for them are mostly laid). As it stands it
+is useful for making code that implements matrix maths more readable
+and for solving simple linear systems but is otherwise incomplete.
 
 
 

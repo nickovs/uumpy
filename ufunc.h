@@ -30,18 +30,35 @@ struct _uumpy_universal_spec;
 
 // A function that iterates across the last dimension to perform a function
 typedef bool(*uumpy_universal_binary)(size_t depth,
-                                       uumpy_obj_ndarray_t *dest, size_t dest_offset,
-                                       uumpy_obj_ndarray_t *src1, size_t src1_offset,
-                                       uumpy_obj_ndarray_t *src2, size_t src2_offset,
-                                        struct _uumpy_universal_spec *spec);
-typedef bool(*uumpy_universal_unary)(size_t depth,
                                       uumpy_obj_ndarray_t *dest, size_t dest_offset,
-                                      uumpy_obj_ndarray_t *src, size_t src_offset,
+                                      uumpy_obj_ndarray_t *src1, size_t src1_offset,
+                                      uumpy_obj_ndarray_t *src2, size_t src2_offset,
                                       struct _uumpy_universal_spec *spec);
+typedef bool(*uumpy_universal_unary)(size_t depth,
+                                     uumpy_obj_ndarray_t *dest, size_t dest_offset,
+                                     uumpy_obj_ndarray_t *src, size_t src_offset,
+                                     struct _uumpy_universal_spec *spec);
 
 typedef void(*uumpy_multiply_accumulate)(uumpy_obj_ndarray_t *dest, size_t dest_offset,
-                                          uumpy_obj_ndarray_t *src1, size_t src1_offset, size_t src1_dim,
-                                          uumpy_obj_ndarray_t *src2, size_t src2_offset, size_t src2_dim);
+                                         uumpy_obj_ndarray_t *src1, size_t src1_offset, size_t src1_dim,
+                                         uumpy_obj_ndarray_t *src2, size_t src2_offset, size_t src2_dim);
+
+typedef void(*uumpy_reduction_init)(uumpy_obj_ndarray_t *dest, size_t dest_offset,
+                                    uumpy_obj_ndarray_t *src, size_t src_offset,
+                                    struct _uumpy_universal_spec *spec, void *state);
+typedef void(*uumpy_reduction_unary)(uumpy_obj_ndarray_t *dest, size_t dest_offset,
+                                     uumpy_obj_ndarray_t *src, size_t src_offset,
+                                     struct _uumpy_universal_spec *spec,
+                                     void *state, bool is_first);
+typedef void(*uumpy_reduction_finish)(uumpy_obj_ndarray_t *dest, size_t dest_offset,
+                                      struct _uumpy_universal_spec *spec, void *state);
+
+typedef struct _uumpy_reduction_spec {
+    size_t state_size;
+    uumpy_reduction_init init_func;
+    uumpy_reduction_unary iter_func;
+    uumpy_reduction_finish finish_func;
+} uumpy_reduction_spec;
 
 typedef mp_float_t(*uumpy_unary_float_func)(mp_float_t x);
 typedef mp_float_t(*uumpy_unary_float2_func)(mp_float_t x, mp_float_t y);
@@ -54,14 +71,15 @@ typedef struct _uumpy_universal_spec {
         uumpy_universal_binary binary;
         uumpy_universal_unary unary;
     } apply_fn;
-    void *context;
     union {
         mp_unary_op_t u_op;
         mp_binary_op_t b_op;
         uumpy_unary_float_func f_func;
         uumpy_unary_float2_func f2_func;
+        uumpy_reduction_spec *r_spec;
         size_t c_count;
     } extra;
+    void *context;
     size_t *indicies;
 } uumpy_universal_spec;
 
