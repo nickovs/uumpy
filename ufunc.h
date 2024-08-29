@@ -30,31 +30,33 @@ struct _uumpy_universal_spec;
 
 // A function that iterates across the last dimension to perform a function
 typedef bool(*uumpy_universal_binary)(size_t depth,
-                                      uumpy_obj_ndarray_t *dest, size_t dest_offset,
-                                      uumpy_obj_ndarray_t *src1, size_t src1_offset,
-                                      uumpy_obj_ndarray_t *src2, size_t src2_offset,
+                                      uumpy_obj_ndarray_t *dest, mp_int_t dest_offset,
+                                      uumpy_obj_ndarray_t *src1, mp_int_t src1_offset,
+                                      uumpy_obj_ndarray_t *src2, mp_int_t src2_offset,
                                       struct _uumpy_universal_spec *spec);
 typedef bool(*uumpy_universal_unary)(size_t depth,
-                                     uumpy_obj_ndarray_t *dest, size_t dest_offset,
-                                     uumpy_obj_ndarray_t *src, size_t src_offset,
+                                     uumpy_obj_ndarray_t *dest, mp_int_t dest_offset,
+                                     uumpy_obj_ndarray_t *src, mp_int_t src_offset,
                                      struct _uumpy_universal_spec *spec);
 
-typedef void(*uumpy_multiply_accumulate)(uumpy_obj_ndarray_t *dest, size_t dest_offset,
-                                         uumpy_obj_ndarray_t *src1, size_t src1_offset, size_t src1_dim,
-                                         uumpy_obj_ndarray_t *src2, size_t src2_offset, size_t src2_dim);
+typedef void(*uumpy_multiply_accumulate)(uumpy_obj_ndarray_t *dest, mp_int_t dest_offset,
+                                         uumpy_obj_ndarray_t *src1, mp_int_t src1_offset, mp_int_t src1_dim,
+                                         uumpy_obj_ndarray_t *src2, mp_int_t src2_offset, mp_int_t src2_dim);
 
-typedef void(*uumpy_reduction_init)(uumpy_obj_ndarray_t *dest, size_t dest_offset,
-                                    uumpy_obj_ndarray_t *src, size_t src_offset,
-                                    struct _uumpy_universal_spec *spec, void *state);
-typedef void(*uumpy_reduction_unary)(uumpy_obj_ndarray_t *dest, size_t dest_offset,
-                                     uumpy_obj_ndarray_t *src, size_t src_offset,
+typedef void(*uumpy_reduction_init)(uumpy_obj_ndarray_t *dest, mp_int_t dest_offset,
+                                    uumpy_obj_ndarray_t *src, mp_int_t src_offset,
+                                    struct _uumpy_universal_spec *spec, void *state_ptr);
+typedef void(*uumpy_reduction_unary)(uumpy_obj_ndarray_t *dest, mp_int_t dest_offset,
+                                     uumpy_obj_ndarray_t *src, mp_int_t src_offset,
                                      struct _uumpy_universal_spec *spec,
-                                     void *state, bool is_first);
-typedef void(*uumpy_reduction_finish)(uumpy_obj_ndarray_t *dest, size_t dest_offset,
-                                      struct _uumpy_universal_spec *spec, void *state);
+                                     void *state_ptr, bool is_first);
+typedef void(*uumpy_reduction_finish)(uumpy_obj_ndarray_t *dest, mp_int_t dest_offset,
+                                      struct _uumpy_universal_spec *spec, void *state_ptr, int count);
 
 typedef struct _uumpy_reduction_spec {
-    size_t state_size;
+    size_t state_size : 16;
+    size_t result_typecode : 8;
+    size_t padding : 8;
     uumpy_reduction_init init_func;
     uumpy_reduction_unary iter_func;
     uumpy_reduction_finish finish_func;
@@ -65,7 +67,7 @@ typedef mp_float_t(*uumpy_unary_float2_func)(mp_float_t x, mp_float_t y);
 
 typedef struct _uumpy_universal_spec {
     mp_int_t layers:8; // Number of dimensions unrolled in this function
-    mp_int_t value_size:8;
+    mp_int_t value_size:8; // Used for copy operations
     mp_int_t _padding:16;
     union {
         uumpy_universal_binary binary;
@@ -80,7 +82,7 @@ typedef struct _uumpy_universal_spec {
         size_t c_count;
     } extra;
     void *context;
-    size_t *indicies;
+    mp_int_t *indices;
 } uumpy_universal_spec;
 
 // Functions for applying functions across an array
@@ -94,9 +96,9 @@ bool ufunc_apply_binary(uumpy_obj_ndarray_t *dest,
                         struct _uumpy_universal_spec *spec);
 
 // Fallback for multiply-accumulate
-void ufunc_mul_acc_fallback(uumpy_obj_ndarray_t *dest, size_t dest_offset,
-                            uumpy_obj_ndarray_t *src1, size_t src1_offset, size_t src1_dim,
-                            uumpy_obj_ndarray_t *src2, size_t src2_offset, size_t src2_dim);
+void ufunc_mul_acc_fallback(uumpy_obj_ndarray_t *dest, mp_int_t dest_offset,
+                            uumpy_obj_ndarray_t *src1, mp_int_t src1_offset, mp_int_t src1_dim,
+                            uumpy_obj_ndarray_t *src2, mp_int_t src2_offset, mp_int_t src2_dim);
 
 void ufunc_find_binary_op_spec(uumpy_obj_ndarray_t *src1, uumpy_obj_ndarray_t *src2,
                                char *dest_type_in_out, mp_binary_op_t op,

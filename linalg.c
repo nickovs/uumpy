@@ -46,15 +46,12 @@
 
 #if UUMPY_ENABLE_LINALG
 
-const mp_obj_type_t uumpy_linalg_type_LinAlgError = {
-    { &mp_type_type },
-    .name = MP_QSTR_LinAlgError,
-    .print = mp_obj_exception_print,
-    .make_new = mp_obj_exception_make_new,
-    .attr = mp_obj_exception_attr,
-    .parent = &mp_type_Exception,
-};
-
+MP_DEFINE_CONST_OBJ_TYPE(uumpy_linalg_type_LinAlgError, MP_QSTR_LinAlgError, MP_TYPE_FLAG_NONE,
+    make_new, mp_obj_exception_make_new,
+    print, mp_obj_exception_print,
+    attr, mp_obj_exception_attr,
+    parent, &mp_type_Exception
+ );
 
 // Given a matrix of flaots, n wide and m high, m <=n, manipulate it
 // into lower triangular form and return the product of the set of
@@ -64,7 +61,7 @@ const mp_obj_type_t uumpy_linalg_type_LinAlgError = {
 
 // Swap two rows and optionally negate one of them
 // The negate flag allows this to have no net effect on the determinant
-STATIC void _swap_negate_rows(mp_float_t *data,
+static void _swap_negate_rows(mp_float_t *data,
                               size_t width, size_t start,
                               size_t a_row_index, size_t b_row_index,
                               bool negate) {
@@ -79,7 +76,7 @@ STATIC void _swap_negate_rows(mp_float_t *data,
 }
 
 // Subtract a multiple of row a from row b so that the row b starts with a zero
-STATIC void _subtract_to_zero(mp_float_t *data,
+static void _subtract_to_zero(mp_float_t *data,
                               size_t width, size_t start,
                               size_t a_row_index, size_t b_row_index) {
     mp_float_t *row_a = data + (a_row_index * width);
@@ -94,7 +91,7 @@ STATIC void _subtract_to_zero(mp_float_t *data,
     }    
 }
 
-STATIC void _divide_row(mp_float_t *data, size_t width,
+static void _divide_row(mp_float_t *data, size_t width,
                         size_t start, size_t row_index, mp_float_t d) {
     mp_float_t *row = data + (row_index * width);
     for (size_t i = start; i < width; i++) {
@@ -105,19 +102,19 @@ STATIC void _divide_row(mp_float_t *data, size_t width,
 
 // This function can be used to diagonalise or just to find row-echelon from
 // Set norm to reduce leading diag to ones.
-STATIC size_t _uumpy_linalg_reduce_array(uumpy_obj_ndarray_t *a, bool diag,
+static size_t _uumpy_linalg_reduce_array(uumpy_obj_ndarray_t *a, bool diag,
                                          bool norm, mp_float_t *det_change_out) {
     mp_float_t *data = (mp_float_t *) a->data;
-    size_t width = a->dim_info[1].length;
-    size_t height = a->dim_info[0].length;
-    size_t x=0, y=0;
+    mp_int_t width = a->dim_info[1].length;
+    mp_int_t height = a->dim_info[0].length;
+    mp_int_t x=0, y=0;
     mp_float_t det_change = 1.0;
 
     while (y < height && x < width) {
-        int best_row = -1;
-        int best_abs_exponent = 0x7fff;
+        mp_int_t best_row = -1;
+        mp_int_t best_abs_exponent = 0x7fff;
 
-        for (size_t j = y; j < height; j++) {
+        for (mp_int_t j = y; j < height; j++) {
             mp_float_t v = data[x + j * width];
 
             if (ABS(v) < UUMPY_EPSILON) {
@@ -144,13 +141,13 @@ STATIC size_t _uumpy_linalg_reduce_array(uumpy_obj_ndarray_t *a, bool diag,
                 _swap_negate_rows(data, width, x, y, best_row, true);
             }
             if (diag) {
-                for (size_t j = 0; j < height; j++) {
+                for (mp_int_t j = 0; j < height; j++) {
                     if (j != y) {
                         _subtract_to_zero(data, width, x, y, j);
                     }
                 }
             } else {
-                for (size_t j = y+1; j < height; j++) {
+                for (mp_int_t j = y+1; j < height; j++) {
                     _subtract_to_zero(data, width, x, y, j);
                 }
             }
@@ -171,29 +168,29 @@ STATIC size_t _uumpy_linalg_reduce_array(uumpy_obj_ndarray_t *a, bool diag,
     return x;
 }
 
-STATIC mp_obj_t uumpy_linalg_re(mp_obj_t arg_in) {
+static mp_obj_t uumpy_linalg_re(mp_obj_t arg_in) {
     uumpy_obj_ndarray_t *o = uumpy_array_from_value(arg_in, UUMPY_DEFAULT_TYPE);
     
     // FIXME
     if (o->dim_count != 2) {
-        mp_raise_msg(&uumpy_linalg_type_LinAlgError, "can only apply row echalon form to 2D matricies");
+        mp_raise_msg(&uumpy_linalg_type_LinAlgError, MP_ERROR_TEXT("can only apply row echalon form to 2D matricies"));
     }
 
     _uumpy_linalg_reduce_array(o, false, true, NULL);
 
     return MP_OBJ_FROM_PTR(o);
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(uumpy_linalg_re_obj, uumpy_linalg_re);
+static MP_DEFINE_CONST_FUN_OBJ_1(uumpy_linalg_re_obj, uumpy_linalg_re);
 
-STATIC mp_obj_t uumpy_linalg_det(mp_obj_t arg_in) {
+static mp_obj_t uumpy_linalg_det(mp_obj_t arg_in) {
     uumpy_obj_ndarray_t *o = uumpy_array_from_value(arg_in, UUMPY_DEFAULT_TYPE);
     
     // FIXME
     if (o->dim_count != 2) {
-        mp_raise_msg(&uumpy_linalg_type_LinAlgError, "can only apply row echalon form to 2D matricies");
+        mp_raise_msg(&uumpy_linalg_type_LinAlgError, MP_ERROR_TEXT("can only apply row echalon form to 2D matricies"));
     }
     if (o->dim_info[0].length != o->dim_info[1].length) {
-        mp_raise_msg(&uumpy_linalg_type_LinAlgError, "det can only be applied to square matricies");
+        mp_raise_msg(&uumpy_linalg_type_LinAlgError, MP_ERROR_TEXT("det can only be applied to square matricies"));
     }
 
     mp_float_t det_change;
@@ -201,21 +198,21 @@ STATIC mp_obj_t uumpy_linalg_det(mp_obj_t arg_in) {
     
     return  mp_obj_new_float(1 / det_change);
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(uumpy_linalg_det_obj, uumpy_linalg_det);
+static MP_DEFINE_CONST_FUN_OBJ_1(uumpy_linalg_det_obj, uumpy_linalg_det);
 
-STATIC mp_obj_t uumpy_linalg_inv(mp_obj_t arg_in) {
+static mp_obj_t uumpy_linalg_inv(mp_obj_t arg_in) {
     uumpy_obj_ndarray_t *o = uumpy_array_from_value(arg_in, UUMPY_DEFAULT_TYPE);
 
     // FIXME
     if (o->dim_count != 2) {
-        mp_raise_msg(&uumpy_linalg_type_LinAlgError, "can only invert 2D matricies");
+        mp_raise_msg(&uumpy_linalg_type_LinAlgError, MP_ERROR_TEXT("can only invert 2D matricies"));
     }
     if (o->dim_info[0].length != o->dim_info[1].length) {
-        mp_raise_msg(&uumpy_linalg_type_LinAlgError, "inv can only be applied to square matricies");
+        mp_raise_msg(&uumpy_linalg_type_LinAlgError, MP_ERROR_TEXT("inv can only be applied to square matricies"));
     }
 
-    size_t length = o->dim_info[0].length;
-    size_t temp_dims[2];
+    mp_int_t length = o->dim_info[0].length;
+    mp_int_t temp_dims[2];
     temp_dims[0] = length;
     temp_dims[1] = length * 2;
     uumpy_obj_ndarray_t *temp = ndarray_new(UUMPY_DEFAULT_TYPE, 2, temp_dims);
@@ -232,15 +229,15 @@ STATIC mp_obj_t uumpy_linalg_inv(mp_obj_t arg_in) {
     ufunc_apply_unary(temp_view, o, &copy_spec);
 
     mp_float_t *data = (mp_float_t *) temp->data;
-    for (size_t j = 0; j < length; j++) {
-        for (size_t i = 0; i < length; i++) {
+    for (mp_int_t j = 0; j < length; j++) {
+        for (mp_int_t i = 0; i < length; i++) {
             data[j * (length * 2) + i + length] = (i == j) ? 1.0 : 0.0;
         }
     }
 
-    size_t end_column = _uumpy_linalg_reduce_array(temp, true, true, NULL);
+    mp_int_t end_column = _uumpy_linalg_reduce_array(temp, true, true, NULL);
     if (end_column != length) {
-        mp_raise_msg(&uumpy_linalg_type_LinAlgError, "singular matrix");
+        mp_raise_msg(&uumpy_linalg_type_LinAlgError, MP_ERROR_TEXT("singular matrix"));
     }
     
     temp_view->base_offset = length;
@@ -249,25 +246,25 @@ STATIC mp_obj_t uumpy_linalg_inv(mp_obj_t arg_in) {
     
     return MP_OBJ_FROM_PTR(o);
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(uumpy_linalg_inv_obj, uumpy_linalg_inv);
+static MP_DEFINE_CONST_FUN_OBJ_1(uumpy_linalg_inv_obj, uumpy_linalg_inv);
 
-STATIC mp_obj_t uumpy_linalg_solve(mp_obj_t a_in, mp_obj_t b_in) {
+static mp_obj_t uumpy_linalg_solve(mp_obj_t a_in, mp_obj_t b_in) {
     uumpy_obj_ndarray_t *a = uumpy_array_from_value(a_in, UUMPY_DEFAULT_TYPE);
     uumpy_obj_ndarray_t *b = uumpy_array_from_value(b_in, UUMPY_DEFAULT_TYPE);
 
     // FIXME
     if (a->dim_count != 2 || b->dim_count != 1) {
-        mp_raise_msg(&uumpy_linalg_type_LinAlgError, "can only solve single set of equations");
+        mp_raise_msg(&uumpy_linalg_type_LinAlgError, MP_ERROR_TEXT("can only solve single set of equations"));
     }
     if (a->dim_info[0].length != a->dim_info[1].length) {
-        mp_raise_msg(&uumpy_linalg_type_LinAlgError, "equationa matrix must be square");
+        mp_raise_msg(&uumpy_linalg_type_LinAlgError, MP_ERROR_TEXT("equationa matrix must be square"));
     }
     if (a->dim_info[0].length != b->dim_info[0].length) {
-        mp_raise_msg(&uumpy_linalg_type_LinAlgError, "dimensions dton't match");
+        mp_raise_msg(&uumpy_linalg_type_LinAlgError, MP_ERROR_TEXT("dimensions dton't match"));
     }
 
-    size_t length = a->dim_info[0].length;
-    size_t temp_dims[2];
+    mp_int_t length = a->dim_info[0].length;
+    mp_int_t temp_dims[2];
     temp_dims[0] = length;
     temp_dims[1] = length + 1;
     uumpy_obj_ndarray_t *temp = ndarray_new(UUMPY_DEFAULT_TYPE, 2, temp_dims);
@@ -288,10 +285,10 @@ STATIC mp_obj_t uumpy_linalg_solve(mp_obj_t a_in, mp_obj_t b_in) {
     
     ufunc_find_copy_spec(b, temp_view, NULL, &copy_spec);
     ufunc_apply_unary(temp_view, b, &copy_spec);
-    
-    size_t end_column = _uumpy_linalg_reduce_array(temp, true, true, NULL);
+
+    mp_int_t end_column = _uumpy_linalg_reduce_array(temp, true, true, NULL);
     if (end_column != length) {
-        mp_raise_msg(&uumpy_linalg_type_LinAlgError, "singular matrix");
+        mp_raise_msg(&uumpy_linalg_type_LinAlgError, MP_ERROR_TEXT("singular matrix"));
     }
     
     temp_view->base_offset = length;
@@ -300,10 +297,10 @@ STATIC mp_obj_t uumpy_linalg_solve(mp_obj_t a_in, mp_obj_t b_in) {
     
     return MP_OBJ_FROM_PTR(b);
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_2(uumpy_linalg_solve_obj, uumpy_linalg_solve);
+static MP_DEFINE_CONST_FUN_OBJ_2(uumpy_linalg_solve_obj, uumpy_linalg_solve);
 
 
-STATIC const mp_rom_map_elem_t uumpy_linalg_module_globals_table[] = {
+static const mp_rom_map_elem_t uumpy_linalg_module_globals_table[] = {
     { MP_ROM_QSTR(MP_QSTR_re), MP_ROM_PTR(&uumpy_linalg_re_obj) },
     { MP_ROM_QSTR(MP_QSTR_det), MP_ROM_PTR(&uumpy_linalg_det_obj) },
     { MP_ROM_QSTR(MP_QSTR_inv), MP_ROM_PTR(&uumpy_linalg_inv_obj) },
@@ -323,7 +320,7 @@ STATIC const mp_rom_map_elem_t uumpy_linalg_module_globals_table[] = {
     { MP_ROM_QSTR(MP_QSTR_LinAlgError), MP_ROM_PTR(&uumpy_linalg_type_LinAlgError) },
     
 };
-STATIC MP_DEFINE_CONST_DICT(uumpy_linalg_module_globals, uumpy_linalg_module_globals_table);
+static MP_DEFINE_CONST_DICT(uumpy_linalg_module_globals, uumpy_linalg_module_globals_table);
 
 // Define module object.
 const mp_obj_module_t uumpy_linalg_module = {

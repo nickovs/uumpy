@@ -35,12 +35,12 @@
 #include "uumath.h"
 
 #define UUMATH_FUN_1(name) \
-    STATIC mp_obj_t uumpy_math_ ## name(size_t n_args, const mp_obj_t *args, mp_map_t *kwargs) { \
+    static mp_obj_t uumpy_math_ ## name(size_t n_args, const mp_obj_t *args, mp_map_t *kwargs) { \
         return uumpy_math_helper_1(MICROPY_FLOAT_C_FUN( name ), n_args, args, kwargs); \
     } \
     MP_DEFINE_CONST_FUN_OBJ_KW(uumpy_math_## name ## _obj, 1, uumpy_math_ ## name)
 
-STATIC mp_obj_t uumpy_math_helper_1(uumpy_unary_float_func op_func,
+static mp_obj_t uumpy_math_helper_1(uumpy_unary_float_func op_func,
                                     mp_uint_t n_args, const mp_obj_t *pos_args,
                                     mp_map_t *kw_args) {
     enum {
@@ -72,12 +72,12 @@ STATIC mp_obj_t uumpy_math_helper_1(uumpy_unary_float_func op_func,
     if (args[ARG_out].u_obj == mp_const_none) {
         if (args[ARG_dtype].u_obj != mp_const_none) {
             if (args[ARG_out].u_obj != mp_const_none) {
-                mp_raise_ValueError("dtype and out arguments mutaully exclusive");
+                mp_raise_ValueError(MP_ERROR_TEXT("dtype and out arguments mutually exclusive"));
             }
             size_t type_len;
             const char *typecode_ptr = mp_obj_str_get_data(args[ARG_dtype].u_obj, &type_len);
             if (type_len != 1) {
-                mp_raise_ValueError("Data type should be a single character code");
+                mp_raise_ValueError(MP_ERROR_TEXT("Data type should be a single character code"));
             }
             result_typecode = typecode_ptr[0];
         } else {
@@ -85,7 +85,7 @@ STATIC mp_obj_t uumpy_math_helper_1(uumpy_unary_float_func op_func,
         }
     } else {
         if (args[ARG_dtype].u_obj != mp_const_none) {
-            mp_raise_ValueError("dtype and out arguments mutaully exclusive");
+            mp_raise_ValueError(MP_ERROR_TEXT("dtype and out arguments mutually exclusive"));
         } else {
             dest = MP_OBJ_TO_PTR(args[ARG_out].u_obj);
             result_typecode = dest->typecode;
@@ -101,7 +101,7 @@ STATIC mp_obj_t uumpy_math_helper_1(uumpy_unary_float_func op_func,
         // Broadcast input if necessary. It's slower than expanding the result but uses less memory.
         if (!ndarray_compare_dimensions(src, dest)) {
             if (ndarray_broadcast(dest, src, &dest, &src)) {
-                mp_raise_ValueError("non-broadcastable output operand");
+                mp_raise_ValueError(MP_ERROR_TEXT("non-broadcastable output operand"));
             }
         }
     }
@@ -110,7 +110,7 @@ STATIC mp_obj_t uumpy_math_helper_1(uumpy_unary_float_func op_func,
     if (ufunc_apply_unary(dest, src, &spec)) {
         return MP_OBJ_FROM_PTR(dest);
     } else {
-        mp_raise_ValueError("math error");
+        mp_raise_ValueError(MP_ERROR_TEXT("math error"));
     }
 }
 

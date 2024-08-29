@@ -70,15 +70,18 @@ typedef struct _uumpy_obj_ndarray_t {
 // This is the type definition
 extern const mp_obj_type_t uumpy_type_ndarray;
 
+bool uumpy_util_get_list_tuple(mp_obj_t value, mp_int_t *len, mp_obj_t **items);
+
 extern uumpy_obj_ndarray_t *uumpy_array_from_value(const mp_obj_t value, char typecode);
-extern uumpy_obj_ndarray_t *ndarray_new(char typecode, size_t dim_count, size_t *dims);
+extern uumpy_obj_ndarray_t *ndarray_new(char typecode, mp_int_t dim_count, mp_int_t *dims);
 extern bool ndarray_compare_dimensions(uumpy_obj_ndarray_t *left_in, uumpy_obj_ndarray_t *right_in);
-bool ndarray_broadcast(uumpy_obj_ndarray_t *left_in, uumpy_obj_ndarray_t *right_in,
-                       uumpy_obj_ndarray_t **left_out, uumpy_obj_ndarray_t **right_out);
+extern bool ndarray_compare_dimensions_counted(uumpy_obj_ndarray_t *left_in, uumpy_obj_ndarray_t *right_in, mp_int_t count);
+extern bool ndarray_broadcast(uumpy_obj_ndarray_t *left_in, uumpy_obj_ndarray_t *right_in,
+                              uumpy_obj_ndarray_t **left_out, uumpy_obj_ndarray_t **right_out);
 
 uumpy_obj_ndarray_t *ndarray_new_from_ndarray(mp_obj_t value_in, char typecode);
-uumpy_obj_ndarray_t *ndarray_new_view(uumpy_obj_ndarray_t *source, size_t new_base,
-                                      size_t new_dim_count, uumpy_dim_info *new_dims);
-uumpy_obj_ndarray_t *ndarray_new_shaped_like(char typecode, uumpy_obj_ndarray_t *other, size_t trim_dims);
+uumpy_obj_ndarray_t *ndarray_new_view(uumpy_obj_ndarray_t *source, mp_int_t new_base,
+                                      mp_int_t new_dim_count, uumpy_dim_info *new_dims);
+uumpy_obj_ndarray_t *ndarray_new_shaped_like(char typecode, uumpy_obj_ndarray_t *other, mp_int_t trim_dims);
 
 #endif // UUMPY_INCLUDED_MODUUMPY_H

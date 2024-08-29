@@ -30,6 +30,7 @@ SRC_USERMOD += $(UUMPY_MOD_DIR)/moduumpy.c
 SRC_USERMOD += $(UUMPY_MOD_DIR)/ufunc.c
 SRC_USERMOD += $(UUMPY_MOD_DIR)/uumath.c
 SRC_USERMOD += $(UUMPY_MOD_DIR)/linalg.c
+SRC_USERMOD += $(UUMPY_MOD_DIR)/reductions.c
 
 # Add our module folder to include path
 CFLAGS_USERMOD += -I$(UUMPY_MOD_DIR)

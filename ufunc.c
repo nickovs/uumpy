@@ -42,20 +42,20 @@ bool ufunc_apply_binary(uumpy_obj_ndarray_t *dest,
                         uumpy_obj_ndarray_t *src1,
                         uumpy_obj_ndarray_t *src2,
                         struct _uumpy_universal_spec *spec) {
-    size_t iterate_layers = dest->dim_count - spec->layers;
+    mp_int_t iterate_layers = dest->dim_count - spec->layers;
     uumpy_dim_info * dim_info = dest->dim_info;
-    size_t layer_indecies[UUMPY_MAX_DIMS];
-    size_t dest_offset = dest->base_offset;
-    size_t src1_offset = src1->base_offset;
-    size_t src2_offset = src2->base_offset;
+    mp_int_t layer_indices[UUMPY_MAX_DIMS];
+    mp_int_t dest_offset = dest->base_offset;
+    mp_int_t src1_offset = src1->base_offset;
+    mp_int_t src2_offset = src2->base_offset;
     bool result = true;
     mp_int_t l;
 
-    spec->indicies = layer_indecies;
+    spec->indices = layer_indices;
     
-    // The layer_indecies count down, since it's quicker
-    for (size_t i=0; i < iterate_layers; i++) {
-        layer_indecies[i] = 0;
+    // The layer_indices count down, since it's quicker
+    for (mp_int_t i=0; i < iterate_layers; i++) {
+        layer_indices[i] = 0;
     }
 
     do {
@@ -68,14 +68,14 @@ bool ufunc_apply_binary(uumpy_obj_ndarray_t *dest,
             src1_offset += src1->dim_info[l].stride;
             src2_offset += src2->dim_info[l].stride;
             dest_offset += dim_info[l].stride;
-            layer_indecies[l]++;
+            layer_indices[l]++;
 
-            if (layer_indecies[l] < dim_info[l].length) {
+            if (layer_indices[l] < dim_info[l].length) {
                 break;
             } else {
                 // Reset this row and allow moving on to the next one
                 size_t ll = dim_info[l].length;
-                layer_indecies[l] = 0;
+                layer_indices[l] = 0;
                 src1_offset -= ll * src1->dim_info[l].stride;
                 src2_offset -= ll * src2->dim_info[l].stride;
                 dest_offset -= ll * dim_info[l].stride;
@@ -91,17 +91,16 @@ bool ufunc_apply_unary(uumpy_obj_ndarray_t *dest,
                        uumpy_universal_spec *spec) {
     size_t iterate_layers = dest->dim_count - spec->layers;
     uumpy_dim_info * dim_info = dest->dim_info;
-    size_t layer_indecies[UUMPY_MAX_DIMS];
-    size_t dest_offset = dest->base_offset;
-    size_t src_offset = src->base_offset;
+    mp_int_t layer_indices[UUMPY_MAX_DIMS];
+    mp_int_t dest_offset = dest->base_offset;
+    mp_int_t src_offset = src->base_offset;
     bool result = true;
     mp_int_t l;
 
-    spec->indicies = layer_indecies;
-    
-    // The layer_indecies count down, since it's quicker
+    spec->indices = layer_indices;
+
     for (size_t i=0; i < iterate_layers; i++) {
-        layer_indecies[i] = 0;
+        layer_indices[i] = 0;
     }
 
     do {
@@ -112,14 +111,14 @@ bool ufunc_apply_unary(uumpy_obj_ndarray_t *dest,
         for (l = iterate_layers-1; l >=0; l--) {
             src_offset += src->dim_info[l].stride;
             dest_offset += dest->dim_info[l].stride;
-            layer_indecies[l]++;
+            layer_indices[l]++;
 
-            if (layer_indecies[l] < dim_info[l].length) {
+            if (layer_indices[l] < dim_info[l].length) {
                 break;
             } else {
                 // Reset this row and allow moving on to the next one
                 size_t ll = dest->dim_info[l].length;
-                layer_indecies[l] = 0;
+                layer_indices[l] = 0;
                 src_offset -= ll * src->dim_info[l].stride;
                 dest_offset -= ll * dest->dim_info[l].stride;
             }
@@ -131,9 +130,9 @@ bool ufunc_apply_unary(uumpy_obj_ndarray_t *dest,
 
 
 // This is a fall-back copy function that lets micropython deal with casting.
-STATIC bool ufunc_copy_fallback(size_t depth,
-                                uumpy_obj_ndarray_t *dest, size_t dest_offset,
-                                uumpy_obj_ndarray_t *src, size_t src_offset,
+static bool ufunc_copy_fallback(size_t depth,
+                                uumpy_obj_ndarray_t *dest, mp_int_t dest_offset,
+                                uumpy_obj_ndarray_t *src, mp_int_t src_offset,
                                 struct _uumpy_universal_spec *spec) {
     (void) depth;
     (void) spec;
@@ -142,9 +141,9 @@ STATIC bool ufunc_copy_fallback(size_t depth,
     return true;
 }
 
-STATIC bool ufunc_copy_same_type(size_t depth,
-                                 uumpy_obj_ndarray_t *dest, size_t dest_offset,
-                                 uumpy_obj_ndarray_t *src, size_t src_offset,
+static bool ufunc_copy_same_type(size_t depth,
+                                 uumpy_obj_ndarray_t *dest, mp_int_t dest_offset,
+                                 uumpy_obj_ndarray_t *src, mp_int_t src_offset,
                                  struct _uumpy_universal_spec *spec) {
     (void) depth;
     // DEBUG_printf("Copy same type at depth %d, from %d to %d, count=%d\n", depth, src_offset, dest_offset, spec->extra.c_count);
@@ -156,10 +155,10 @@ STATIC bool ufunc_copy_same_type(size_t depth,
 
 
 // If there is no optimised code for any given operation, just let micropython do it
-STATIC bool ufunc_universal_binary_op_fallback(size_t depth,
-                                               uumpy_obj_ndarray_t *dest, size_t dest_offset,
-                                               uumpy_obj_ndarray_t *src1, size_t src1_offset,
-                                               uumpy_obj_ndarray_t *src2, size_t src2_offset,
+static bool ufunc_universal_binary_op_fallback(size_t depth,
+                                               uumpy_obj_ndarray_t *dest, mp_int_t dest_offset,
+                                               uumpy_obj_ndarray_t *src1, mp_int_t src1_offset,
+                                               uumpy_obj_ndarray_t *src2, mp_int_t src2_offset,
                                                struct _uumpy_universal_spec *spec) {
     (void) depth;
 
@@ -181,9 +180,9 @@ STATIC bool ufunc_universal_binary_op_fallback(size_t depth,
     }
 }
 
-STATIC bool ufunc_universal_unary_op_fallback(size_t depth,
-                                              uumpy_obj_ndarray_t *dest, size_t dest_offset,
-                                              uumpy_obj_ndarray_t *src, size_t src_offset,
+static bool ufunc_universal_unary_op_fallback(size_t depth,
+                                              uumpy_obj_ndarray_t *dest, mp_int_t dest_offset,
+                                              uumpy_obj_ndarray_t *src, mp_int_t src_offset,
                                               struct _uumpy_universal_spec *spec) {
     (void) depth;
     mp_obj_t value = mp_binary_get_val_array(src->typecode, src->data, src_offset);
@@ -201,16 +200,16 @@ STATIC bool ufunc_universal_unary_op_fallback(size_t depth,
     }
 }
 
-STATIC bool ufunc_unary_float_func_fallback(size_t depth,
-                                            uumpy_obj_ndarray_t *dest, size_t dest_offset,
-                                            uumpy_obj_ndarray_t *src, size_t src_offset,
+static bool ufunc_unary_float_func_fallback(size_t depth,
+                                            uumpy_obj_ndarray_t *dest, mp_int_t dest_offset,
+                                            uumpy_obj_ndarray_t *src, mp_int_t src_offset,
                                             struct _uumpy_universal_spec *spec) {
     (void) depth;
     mp_obj_t value = mp_binary_get_val_array(src->typecode, src->data, src_offset);
     mp_float_t x = mp_obj_get_float(value);
     mp_float_t ans = spec->extra.f_func(x);
     if ((isnan(ans) && !isnan(x)) || (isinf(ans) && !isinf(x))) {
-        mp_raise_ValueError("math domain error");
+        mp_raise_ValueError(MP_ERROR_TEXT("math domain error"));
     }
 
     mp_binary_set_val_array(dest->typecode, dest->data, dest_offset, mp_obj_new_float(ans));
@@ -219,9 +218,9 @@ STATIC bool ufunc_unary_float_func_fallback(size_t depth,
 }
 
 // Applies a function to a whole line, assuming both are float arrays
-STATIC bool ufunc_unary_float_func_floats_1d(size_t depth,
-                                             uumpy_obj_ndarray_t *dest, size_t dest_offset,
-                                             uumpy_obj_ndarray_t *src, size_t src_offset,
+static bool ufunc_unary_float_func_floats_1d(size_t depth,
+                                             uumpy_obj_ndarray_t *dest, mp_int_t dest_offset,
+                                             uumpy_obj_ndarray_t *src, mp_int_t src_offset,
                                              struct _uumpy_universal_spec *spec) {
     mp_float_t *src_ptr = (mp_float_t *) src->data;
     mp_float_t *dest_ptr = (mp_float_t *) dest->data;
@@ -233,7 +232,7 @@ STATIC bool ufunc_unary_float_func_floats_1d(size_t depth,
         mp_float_t ans = spec->extra.f_func(x);
 
         if ((isnan(ans) && !isnan(x)) || (isinf(ans) && !isinf(x))) {
-            mp_raise_ValueError("math domain error");
+            mp_raise_ValueError(MP_ERROR_TEXT("math domain error"));
         }
                         dest_ptr[dest_offset] = ans;
 
@@ -244,32 +243,32 @@ STATIC bool ufunc_unary_float_func_floats_1d(size_t depth,
     return true;
 }
 
-void ufunc_mul_acc_fallback(uumpy_obj_ndarray_t *dest, size_t dest_offset,
-                            uumpy_obj_ndarray_t *src1, size_t src1_offset, size_t src1_dim,
-                            uumpy_obj_ndarray_t *src2, size_t src2_offset, size_t src2_dim) {
+void ufunc_mul_acc_fallback(uumpy_obj_ndarray_t *dest, mp_int_t dest_offset,
+                            uumpy_obj_ndarray_t *src1, mp_int_t src1_offset, mp_int_t src1_dim,
+                            uumpy_obj_ndarray_t *src2, mp_int_t src2_offset, mp_int_t src2_dim) {
     // DEBUG_printf("MAC fallbabck: dest offset=%d, src1 offset=%d, dim=%d, src2 offset=%d, dim=%d\n",
     //              dest_offset, src1_offset, src1_dim, src2_offset, src2_dim);
-    size_t length = src1->dim_info[src1_dim].length;
+    mp_int_t length = src1->dim_info[src1_dim].length;
     if (length != src2->dim_info[src2_dim].length) {
         // DEBUG_printf("src1 depth: %d, src2 depth: %d : %d != %d", src1_dim, src2_dim, length, src2->dim_info[src2_dim].length);
-        mp_raise_ValueError("dimension mis-match");
+        mp_raise_ValueError(MP_ERROR_TEXT("dimension mis-match"));
     }
 
     mp_obj_t acc = (dest->typecode == UUMPY_DEFAULT_TYPE) ? mp_obj_new_float(0.0) : MP_OBJ_NEW_SMALL_INT(0);
     mp_obj_t prod, v1, v2;
 
-    for (size_t i=0; i < src1->dim_info[src1_dim].length; i++) {
+    for (mp_int_t i=0; i < src1->dim_info[src1_dim].length; i++) {
         v1 = mp_binary_get_val_array(src1->typecode, src1->data, src1_offset);
         v2 = mp_binary_get_val_array(src2->typecode, src2->data, src2_offset);
 
         prod = mp_binary_op(MP_BINARY_OP_MULTIPLY, v1, v2);
         if (prod == MP_OBJ_NULL) {
-            mp_raise_ValueError("could not multiply components");
+            mp_raise_ValueError(MP_ERROR_TEXT("could not multiply components"));
         }
 
         acc =  mp_binary_op(MP_BINARY_OP_ADD, prod, acc);
         if (acc == MP_OBJ_NULL) {
-            mp_raise_ValueError("could not accumulate components");
+            mp_raise_ValueError(MP_ERROR_TEXT("could not accumulate components"));
         }
 
         src1_offset += src1->dim_info[src1_dim].stride;
@@ -316,7 +315,7 @@ void ufunc_find_binary_op_spec(uumpy_obj_ndarray_t *src1, uumpy_obj_ndarray_t *s
             break;
 
         default:
-            mp_raise_ValueError("Unsupported universal operator");
+            mp_raise_ValueError(MP_ERROR_TEXT("Unsupported universal operator"));
             break;
         }
         *dest_type_in_out = result_type;
@@ -344,7 +343,7 @@ void ufunc_find_unary_op_spec(uumpy_obj_ndarray_t *src,
             break;
 
         default:
-            mp_raise_ValueError("Unsupported universal operator");
+            mp_raise_ValueError(MP_ERROR_TEXT("Unsupported universal operator"));
             break;
         }
         *dest_type_in_out = result_type;
@@ -398,7 +397,7 @@ void ufunc_find_copy_spec(uumpy_obj_ndarray_t *src,
     }
 
     if (dest_type == src->typecode) {
-        size_t chunk_size = 1;
+        mp_int_t chunk_size = 1;
 
         mp_int_t i = src->dim_count-1;
 
